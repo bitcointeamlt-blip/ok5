@@ -1481,12 +1481,30 @@ export class F9PvpRoom extends Room<F9State> {
       p.team = DEFENDER_TEAM;
       this._ownerSid = client.sessionId;
       let _re = 0;
+      const _prevOwners = new Set<string>();   // 🪖 iš KO perėmėm — pagal tuos raktus gulės ir rezervo eilė
       this.state.units.forEach((u) => {
         // 🧷 07-15 (g3nka repro: „savo unitai pažymėti kaip priešai, nevaldomi“): + TO PATIES ADRESO dar-GYVA
         //   sena sesija (2 tab'ai / reload'o lenktynės su senu socket'u) — NAUJAUSIAS tab'as perima valdymą.
         const _oldSame = this.state.players.has(u.owner) && String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase() === this._ownerAddr;
-        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === AI_DEF_OWNER || !this.state.players.has(u.owner) || _oldSame)) { u.owner = client.sessionId; _re++; }
+        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === AI_DEF_OWNER || !this.state.players.has(u.owner) || _oldSame)) { _prevOwners.add(u.owner); u.owner = client.sessionId; _re++; }
       });
+      /* 🪖 REZERVAS KELIAUJA PASKUI UNITUS (2026-08-23, user: „kai puolu — rezervas pasirodo, kai ginuosi — ne").
+       * Perimant gynybą unitai gauna NAUJĄ owner sid, o `_tryReinforce` eilės ieško būtent pagal `fallen.owner`.
+       * Jei eilė lieka po SENU raktu (AI_DEF_OWNER arba ghost/reconnect'o sid), ji tampa nepasiekiama ir
+       * pastiprinimai TYLIAI dingsta — bet TIK ginantis (puolant sid nesikeičia, todėl ten veikė).
+       * 08-21 rezervo fix'as (39be7be7) uždengė ASYNC perėmimą (žr. aukščiau), o šitas HOME kelias liko. */
+      if (!(this._reserves.get(client.sessionId) || []).length) {
+        for (const _sid of [AI_DEF_OWNER, ..._prevOwners]) {
+          const _pool = this._reserves.get(_sid);
+          if (_pool && _pool.length) {
+            this._reserves.set(client.sessionId, _pool);
+            console.log(`[F9PvpRoom] 🪖 rezervas (${_pool.length}) perduotas gynėjui iš ${_sid === AI_DEF_OWNER ? "AI" : _sid.slice(0, 8) + "…"}`);
+            break;
+          }
+        }
+      }
+      for (const _sid of _prevOwners) if (_sid !== client.sessionId) this._reserves.delete(_sid);
+      this._reserves.delete(AI_DEF_OWNER);
       const _cl = client;
       setTimeout(() => {
         try {
