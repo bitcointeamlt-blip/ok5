@@ -3014,6 +3014,8 @@ function _getVisibleCanvasRect() {
 // pixel-perfect (jokio stretch/deformacijos). Kiti aukštai — fiksuotas
 // advCanvasW×ADV_CANVAS_H su scale(1.32) kaip visada.
 let _f9FullscreenOn = false;
+let _f9LastVpW = 0, _f9LastVpH = 0;   // 📱 paskutinis viewport (orientacijos apsivertimui aptikti — žr. _f9SyncCanvasSize)
+const _f9ZoomByOri = {};              // 📱 mastelis atskirai portrait/landscape — kad pasukus pirmyn-atgal vaizdas grįžtų TOKS PAT
 // 🔍 F9 PASAULIO zoom (pinch pritraukimas/atitolinimas): 1=100%, <1=atitolinta. TIK F9 world pass'ui —
 //   UI (kortelės/mygtukai/juostos) piešiasi setTransform(1,..) screen-space ir NEskaluojasi.
 //   Keičia pinch gestas (_installF9Touch) ribose [0.45..1.4]. Default telefone 0.7 (matosi daugiau arenos).
@@ -3038,6 +3040,28 @@ function _f9SyncCanvasSize() {
     // unitų po resize). Min 320 tik nuo 0-dydžio apsauga.
     const w = Math.max(320, Math.floor(rawW * _f9Z));
     const h = Math.max(320, Math.floor(rawH * _f9Z));
+    /* 📱🔄 08-23 (Ronkelife.ron: „rotated to have a better view but makes it worse — and the units
+     * disappears"). `_f9WorldZoom` yra FIKSUOTAS (telefone 0.7, keičia tik pinch) ir į ekrano aukštį
+     * nereaguoja. Pasukus telefoną aukštis nukrenta ~1400→~600 px, o mastelis lieka tas pats ⇒ matomo
+     * pasaulio aukštis sumažėja daugiau nei perpus, ir pilies apačioje stovintys unitai išsprūsta už
+     * kadro. Jie NEdingsta — jų tiesiog nebematyti, bet žaidėjui atrodo, kad prarado.
+     * Dabar PASUKUS (kai portrait↔landscape apsiverčia) mastelį perskaičiuojam taip, kad matomo pasaulio
+     * AUKŠTIS liktų toks pat: landscape'e automatiškai atitolinam ⇒ vertikaliai matai tiek pat, o
+     * horizontaliai daugiau. Reaguojam TIK į apsivertimą — kad URL juostos slinkimas (nuolatiniai smulkūs
+     * `visualViewport` resize'ai) masteliо nenudreifuotų. Pinch lieka nepaliestas. */
+    try {
+      var _wasLand = (_f9LastVpW || 0) > (_f9LastVpH || 0), _isLand = w > h;
+      if (_f9LastVpH && _isLand !== _wasLand && typeof window._f9Zoom === 'number') {
+        /* Mastelį įsimenam ATSKIRAI kiekvienai orientacijai. Be to grįžimas nebūtų simetriškas:
+         * clamp'as ties 0.45 „nurėžia" dalį, ir 0.7 → landscape → atgal duotų 1.05, t. y. žaidėjo
+         * portrait vaizdas pasikeistų vien nuo pasukimo pirmyn-atgal. Dabar grįžus atstatom TIKSLIAI. */
+        _f9ZoomByOri[_wasLand ? 'land' : 'port'] = window._f9Zoom;
+        var _saved = _f9ZoomByOri[_isLand ? 'land' : 'port'];
+        var _z2 = (typeof _saved === 'number') ? _saved : window._f9Zoom * (h / _f9LastVpH);
+        window._f9Zoom = Math.max(0.45, Math.min(1.4, _z2));
+      }
+      _f9LastVpW = w; _f9LastVpH = h;
+    } catch (_) {}
     if (canvas.width !== w || canvas.height !== h) {
       advCanvasW = w;
       canvas.width = w;
