@@ -629,7 +629,10 @@ export class F9PvpRoom extends Room<F9State> {
   private _raidStolen = 0;                      // pavogti kaulai (užpildoma _endMatch grobio bloke)
   private _endBones = { atk: 0, def: 0 };       // 🦴 abiejų pusių sesijos kaulai (_endMatch summary; _persistRaidReport skaito PO flush'o)
   private _minePend = new Map<string, { nonce: string; amt: number; at: number }>();   // ⛏️💸 laukiantis withdrawal (deduct'inta; jei TX nenusėda po deadline → re-credit)
-  private _matchReserve = { atk: 0, def: 0 };   // 🪖 08-23: rezervo eilės dydis mūšio starte (į mačo įrašą)
+  /* 🪖 08-23: kiek pastiprinimų REALIAI įėjo į mūšį. Eilės dydis netiko — jis matuojamas per anksti:
+   * į HOME kambarį puolikas ateina JAU PO `_startMatch`, tad jo skaičius visada būdavo 0.
+   * Šis skaitliukas atsako tiesiai: 0 gynėjo pusėje = rezervas neįėjo. */
+  private _matchReinf = { atk: 0, def: 0 };
   private _raidReported = false;               // vieną kartą per kambarį
 
   onCreate(options: any) {
@@ -1725,16 +1728,7 @@ export class F9PvpRoom extends Room<F9State> {
     for (const p of this.state.players.values()) this._spawnSquadFor(p);
     // 🤖 ASYNC raid: taikinys offline → spawninam AI gynėjus iš snapshot'o (TOSE PAČIOSE pozicijose, kur paliko).
     if (this._asyncRaid && this._restoreUnits && this._restoreUnits.length) this._spawnAiDefenders(this._restoreUnits);
-    /* 🪖 08-23 DIAGNOSTIKA: užfiksuojam eilių dydžius MŪŠIO STARTE → į mačo įrašą (`atkReserve`/`defReserve`).
-     * Be šito „ar rezervas apskritai susidarė" matėsi tik Colyseus loguose, o jų iš DB nepasieksi. */
-    this._matchReserve = { atk: 0, def: 0 };
-    this._reserves.forEach((pool, sid) => {
-      const n = (pool || []).length;
-      if (sid === AI_DEF_OWNER) { this._matchReserve.def += n; return; }
-      const pp = this.state.players.get(sid);
-      if (!pp) return;
-      if (pp.team === DEFENDER_TEAM) this._matchReserve.def += n; else this._matchReserve.atk += n;
-    });
+    this._matchReinf = { atk: 0, def: 0 };   // 🪖 naujas mūšis → skaitliukai iš naujo
     // 🏰 Castle siena — sukuriam segmentus (server-authoritative kolizija + HP + siege).
     this._walls = [];
     this.state.walls.clear();
@@ -1858,6 +1852,7 @@ export class F9PvpRoom extends Room<F9State> {
     }
     const sp = FFA_SPAWNS[p.team % FFA_SPAWNS.length];
     this._spawnOneUnit(p, entry, sp.x, sp.y);          // pastiprinimas ateina prie savo bazės krašto
+    if (p.team === DEFENDER_TEAM) this._matchReinf.def++; else this._matchReinf.atk++;   // 🪖 diagnostikai
     this.broadcast("reinforce", { owner: fallen.owner, team: p.team, left: pool.length });
   }
 
@@ -1895,6 +1890,7 @@ export class F9PvpRoom extends Room<F9State> {
     u.cmd = "idle";
     this.state.units.set(u.id, u);
     this._ai.set(u.id, { order: "hold", lastAtk: 0, engageId: "", kills: 0 });
+    this._matchReinf.def++;   // 🪖 diagnostikai (AI ginama pilis — tas pats gynėjo skaitliukas)
     this.broadcast("reinforce", { owner: AI_DEF_OWNER, team: DEFENDER_TEAM, left: pool.length });
     console.log(`[F9PvpRoom] 🪖🤖 gynėjo pastiprinimas: ${entry.utype} lv${entry.level} (#${entry.tokenId}) — rezerve liko ${pool.length}`);
   }
@@ -3118,7 +3114,7 @@ export class F9PvpRoom extends Room<F9State> {
       winner: atkWon ? "attacker" : "defender", result,
       atkSurvived: atkT ? atkT.survived : 0, atkInjured: atkT ? atkT.injured : 0, atkDead: atkT ? atkT.dead : 0,
       defSurvived: defT ? defT.survived : 0, defInjured: defT ? defT.injured : 0, defDead: defT ? defT.dead : 0,
-      atkReserve: this._matchReserve.atk, defReserve: this._matchReserve.def,   // 🪖 eilės dydis mūšio pradžioje (diagnostikai)
+      atkReserve: this._matchReinf.atk, defReserve: this._matchReinf.def,   // 🪖 kiek pastiprinimų realiai įėjo (0 = rezervas nesuveikė)
       atkBones: this._endBones.atk, defBones: this._endBones.def,   // 🦴 kaulų grobis pusėms (kill loot)
       bones: this._raidStolen, durationMs: this.state.startedAt ? Date.now() - this.state.startedAt : 0,
     }).then((ok) => {
