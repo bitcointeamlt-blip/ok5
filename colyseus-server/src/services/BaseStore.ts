@@ -314,6 +314,9 @@ export type MatchRecord = {
   result: string;   // gynėjo perspektyva: 'lost' | 'defended' | 'retreat'
   atkSurvived: number; atkInjured: number; atkDead: number;
   defSurvived: number; defInjured: number; defDead: number;
+  /* 🪖 08-23 DIAGNOSTIKA: kiek pastiprinimų eilėje buvo mūšio pradžioje. 0 gynėjo pusėje ⇒ rezervas
+   * nesusidarė (kešas šaltas / snapshot 12) — be šito lauko tai matėsi TIK Colyseus loguose. */
+  atkReserve?: number; defReserve?: number;
   atkBones: number; defBones: number;   // 🦴 kiekvienos pusės kaulų grobis (kill loot; AI gynėjas=0)
   bones: number;                        // 💰 pavogtas mining pot RONKE (fullWipe steal; istoriškai vadinasi bones)
   durationMs: number;

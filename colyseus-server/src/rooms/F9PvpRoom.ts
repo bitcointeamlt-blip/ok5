@@ -629,6 +629,7 @@ export class F9PvpRoom extends Room<F9State> {
   private _raidStolen = 0;                      // pavogti kaulai (užpildoma _endMatch grobio bloke)
   private _endBones = { atk: 0, def: 0 };       // 🦴 abiejų pusių sesijos kaulai (_endMatch summary; _persistRaidReport skaito PO flush'o)
   private _minePend = new Map<string, { nonce: string; amt: number; at: number }>();   // ⛏️💸 laukiantis withdrawal (deduct'inta; jei TX nenusėda po deadline → re-credit)
+  private _matchReserve = { atk: 0, def: 0 };   // 🪖 08-23: rezervo eilės dydis mūšio starte (į mačo įrašą)
   private _raidReported = false;               // vieną kartą per kambarį
 
   onCreate(options: any) {
@@ -1396,6 +1397,13 @@ export class F9PvpRoom extends Room<F9State> {
           this._restoreUnits = await this._chainFilterSnap(this._ownerAddr, this._restoreUnits);   // 🔐 ginа TIK registruoti
         } catch (_) { this._restoreUnits = null; }
         try { await this._loadInjured(this._ownerAddr); } catch (_) {}   // 🏥 sužaloti gynėjai negins
+        /* 🪖 REZERVO ŠALTINIS (2026-08-23, user: „ginuosi — rezervo nėra, nors dekas 30").
+         * `_spawnAiDefenders` eilę sudaro iš snapshot'o likučio + `chainStatsCached(owner)`, o tai
+         * SINCHRONINIS kešas: nepavykus on-chain skaitymui jis grąžina null ⇒ eilė TUŠČIA. Snapshot'e
+         * paprastai guli tik 12 (tiek telpa lauke) ⇒ likučio irgi nėra ⇒ gynėjas kaunasi be pastiprinimų.
+         * `_chainFilterSnap` kešą pašildo TIK kai snapshot'as netuščias ir RPC pavyko, tad tuo remtis negalima.
+         * Todėl deką užkraunam ČIA, atskirai ir su await — po šito `chainStatsCached` jau turi duomenis. */
+        try { await chainDeck(this._ownerAddr); } catch (_) {}
         try { await this._loadCem(this._ownerAddr); this._cemAccrue(this._ownerAddr); } catch (_) {}   // ⚰️ grobiui
       }
       // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (žaidėjas pasirinko saugumą už lėtesnį kasimą).
@@ -1717,6 +1725,16 @@ export class F9PvpRoom extends Room<F9State> {
     for (const p of this.state.players.values()) this._spawnSquadFor(p);
     // 🤖 ASYNC raid: taikinys offline → spawninam AI gynėjus iš snapshot'o (TOSE PAČIOSE pozicijose, kur paliko).
     if (this._asyncRaid && this._restoreUnits && this._restoreUnits.length) this._spawnAiDefenders(this._restoreUnits);
+    /* 🪖 08-23 DIAGNOSTIKA: užfiksuojam eilių dydžius MŪŠIO STARTE → į mačo įrašą (`atkReserve`/`defReserve`).
+     * Be šito „ar rezervas apskritai susidarė" matėsi tik Colyseus loguose, o jų iš DB nepasieksi. */
+    this._matchReserve = { atk: 0, def: 0 };
+    this._reserves.forEach((pool, sid) => {
+      const n = (pool || []).length;
+      if (sid === AI_DEF_OWNER) { this._matchReserve.def += n; return; }
+      const pp = this.state.players.get(sid);
+      if (!pp) return;
+      if (pp.team === DEFENDER_TEAM) this._matchReserve.def += n; else this._matchReserve.atk += n;
+    });
     // 🏰 Castle siena — sukuriam segmentus (server-authoritative kolizija + HP + siege).
     this._walls = [];
     this.state.walls.clear();
@@ -3100,6 +3118,7 @@ export class F9PvpRoom extends Room<F9State> {
       winner: atkWon ? "attacker" : "defender", result,
       atkSurvived: atkT ? atkT.survived : 0, atkInjured: atkT ? atkT.injured : 0, atkDead: atkT ? atkT.dead : 0,
       defSurvived: defT ? defT.survived : 0, defInjured: defT ? defT.injured : 0, defDead: defT ? defT.dead : 0,
+      atkReserve: this._matchReserve.atk, defReserve: this._matchReserve.def,   // 🪖 eilės dydis mūšio pradžioje (diagnostikai)
       atkBones: this._endBones.atk, defBones: this._endBones.def,   // 🦴 kaulų grobis pusėms (kill loot)
       bones: this._raidStolen, durationMs: this.state.startedAt ? Date.now() - this.state.startedAt : 0,
     }).then((ok) => {
