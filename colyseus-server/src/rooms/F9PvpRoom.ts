@@ -214,7 +214,7 @@ const INJURY_CHANCE = 1.0;   // 100% sužalojimai (0% mirtis) — laikinai
  *   mūšyje (_rollInjury). Kol INJURY_CHANCE = 1.0 — tai reiškia TIK ligoninę; grąžinus 10% mirtį
  *   (1.0 → 0.9) dezertyrai automatiškai pradės ir žūti, be jokių papildomų pakeitimų.
  *   0 = išjungta (senas elgesys, be deploy'o). */
-const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0.5;
+const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0;   // 2026-08-25 (user): IŠJUNGTA. Grąžinti — F9_DESERT_PCT=0.5
 const HEAL_MS = Number(process.env.F9_HEAL_MS) || 3600 * 1000;   // 1h / unitą (env override testams)
 // 🏥 LIGONINĖS LYGIAI (user 07-04): L2 +1 slotas; L3/L4 −10min gydymui; L5 3-ias slotas.
 const HOSP_MAX_LVL = 5;
@@ -1833,14 +1833,35 @@ export class F9PvpRoom extends Room<F9State> {
 
   // 🪖 REINFORCEMENT: aktyvus unitas krito → jei žaidėjas turi rezervą (dekas >12), įleidžiam vieną prie savo
   //   krašto → laiko ≤MAX_ACTIVE aktyvių. Didesnis dekas = daugiau pastiprinimų = ilgesnis atsparumas.
+  /* 🪖🔁 REZERVO EILĖS ATSTATYMAS (2026-08-25, user: „puolant rezervas veikia, ginantis — ne").
+   * `_reserves` buvo SĄRAŠAS, sudaromas VIENĄ kartą (_spawnSquadFor / _deployReady / set_squad) ir toliau
+   * tik trumpėjantis per `pool.shift()`. O skaičius, kurį žaidėjas mato (`mineReserve`), ateina iš
+   * `_fieldCounts()` ir perskaičiuojamas GYVAI. Kai unitai pasveiksta PO būrio sudarymo (lova arba BLESS)
+   * arba kai eilę išsėmė ankstesnis raidas toje pačioje pilies sesijoje, rodyklė kyla, o eilė lieka tuščia.
+   * PUOLANT to nesimatė: būrys sudaromas prieš pat kovą, tad eilė nespėja pasenti. GINANTIS pilies kambarys
+   * gyvuoja valandas — todėl gynėjo pastiprinimai praktiškai neveikė (istorija: 0–4 mačai iš 10–24).
+   * DABAR: radę tuščią eilę, ją perskaičiuojam ta pačia formule, kurią naudoja rodyklė. */
+  private _rebuildReserve(p: F9Player): DeckEntry[] {
+    const addr = String(p.address || "").trim().toLowerCase();
+    const inj = this._injuredSet(addr), dead = this._deadSet(addr);
+    /* Į lauką jau patekusius (GYVUS AR KRITUSIUS šiame mūšyje) praleidžiam — tas pats anti-dublio
+     * principas kaip žemiau `_tryReinforce`: tas pats NFT negali įeiti antrą kartą. */
+    const onField = new Set<string>();
+    this.state.units.forEach((u) => { if (u.owner === p.sessionId && u.tokenId) onField.add(u.tokenId); });
+    const pool = this._pureDeck(this._decks.get(p.sessionId) || [])
+      .filter((e) => e.tokenId && !/^dev/i.test(e.tokenId) && !inj.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId));
+    this._reserves.set(p.sessionId, pool);
+    return pool;
+  }
+
   private _tryReinforce(fallen: F9Unit) {
-    const pool = this._reserves.get(fallen.owner);
-    if (!pool || !pool.length) return;
+    let pool = this._reserves.get(fallen.owner);
     const p = this.state.players.get(fallen.owner);
     /* 🪖 08-21: AI gynėjas (async raidas) rezervą turi TAIP PAT kaip žmogus — jo pilis, jo unitai.
      * Anksčiau čia buvo `if (!p) return`, todėl offline gynėjo dekas mūšyje nedalyvaudavo visai. */
-    if (!p && fallen.owner === AI_DEF_OWNER) { this._reinforceAiDefender(fallen, pool); return; }
+    if (!p && fallen.owner === AI_DEF_OWNER) { if (!pool || !pool.length) return; this._reinforceAiDefender(fallen, pool); return; }
     if (!p) return;                                    // stress/kiti savininkai rezervo neturi
+    if (!pool || !pool.length) { pool = this._rebuildReserve(p); if (!pool.length) return; }   // 🔁 eilė pasenusi/išsemta → perskaičiuojam
     // 🔒 07-04 ANTI-DUBLIS: praleidžiam rezervo įrašus, kurių tokenId JAU yra lauke (gyvas AR kritęs
     //   šiame mūšyje) — kitaip tas pats NFT įeitų antrą kartą (dvigubas injury roll, „prisikėlimas").
     const onField = new Set<string>();
