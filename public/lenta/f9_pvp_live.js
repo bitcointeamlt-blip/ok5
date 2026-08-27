@@ -1476,7 +1476,7 @@
       } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
-    /* ⚡🏭 BLESS GENERATORIUS (08-22) — pirktas/upgrade'intas už kaulus. Serveris grąžina naują lygį ir
+    /* ⚡🏭 BLESS GENERATORIUS (08-22) — pirktas/upgrade’intas už kaulus. Serveris grąžina naują lygį ir
      * ŠVIEŽIĄ `insta` (paros lubos jau su nauju lygiu), tad panelė iškart rodo teisingą claim skaičių. */
     room.onMessage('blessgen_upgraded', function (e) {
       if (e && e.insta) window._f9HospInsta = e.insta;

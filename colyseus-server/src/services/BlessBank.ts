@@ -41,7 +41,7 @@ const _key = (a: string) => _norm(a) + "#bless";
 // Kiek galima claim'inti per parą pagal Ronke Score percentilę (0 = žemiau top 50% arba nėra score).
 /* ⚡🏭 BLESS GENERATORIUS (2026-08-22, user): žaidėjams, kurių Ronke Score nesiekia pakopų (arba
  * ir siekia — generatorius PRIDEDAMAS, ne pakeičia). Perkamas už kaulus pilyje, lygis 1..5 =
- * +1..+5 BLESS į paros emisiją. Emisijos mechanika ta pati (rolling 24h langas, neclaim'inta para
+ * +1..+5 BLESS į paros emisiją. Emisijos mechanika ta pati (rolling 24h langas, nepasiimta para
  * dingsta), tad jokio atskiro laikmačio nereikia — tik pakyla paros lubos. */
 export const BLESS_GEN_MAX_LVL = 5;
 export function blessClaimCap(percentile: number, genLevel: number = 0): number {

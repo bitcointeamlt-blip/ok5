@@ -107,7 +107,7 @@ const WALL_HP = 40;
 const WALL_MAX_LVL = 4;                                    // 🏗️ sienos upgrade lygiai (1 medis → 2-4 akmuo, vis stipresnė)
 /* 🧱🐢 NERF 2026-08-22 (user): „tiktais paskutinį lygį −10 HP" — nuimam TIK nuo aukščiausio lygio,
  * žemesni lieka nepaliesti. L1=40 · L2=80 · L3=120 · L4=150 (buvo 160).
- * maxHp visada perskaičiuojamas iš lygio (spawn'inant ir upgrade'inant), tad migracijos nereikia. */
+ * maxHp visada perskaičiuojamas iš lygio (spawn’inant ir upgrade’inant), tad migracijos nereikia. */
 const WALL_TOP_LVL_NERF = 10;
 const wallHpForLevel = (lvl: number) => {
   const L = Math.max(1, Math.min(WALL_MAX_LVL, lvl));
@@ -174,7 +174,7 @@ const TOWER_DMG_BY_LVL: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5 };   /
 const towerDmgForLevel = (lvl: number) => TOWER_DMG_BY_LVL[Math.max(1, Math.min(TOWER_MAX_LVL, lvl))] || 3; // L1=3, L2=4, L3=4, L4=5
 const TOWER_RANGE = 6.5;    // šaudymo nuotolis (cells)
 /* 🗼🐢 NERF 2026-08-22 (user): „3 kartai kas 10 sek" → 10000/3 ≈ 3333 ms tarp šūvių.
- * Buvo 2200 ms = 4,55 šūvio per 10 s vienam bokštui; dabar lygiai 3,0. Su 5 bokštais залп krenta
+ * Buvo 2200 ms = 4,55 šūvio per 10 s vienam bokštui; dabar lygiai 3,0. Su 5 bokštais zalpas krenta
  * nuo ~22,7 iki 15 šūvių per 10 s. Cooldown per-celę, tad kiekvienas bokštas lėtėja vienodai. */
 const TOWER_CD = 3333;      // cooldown tarp šūvių (ms) — 3 šūviai / 10 s
 const TOWER_DMG = 3;        // bolt žala
@@ -223,7 +223,7 @@ const DEATH_PCT = Math.round((1 - INJURY_CHANCE) * 100);   // rodymui/logams
 /* 🏳️💥 DEZERTYRO BAUSMĖ (user 2026-08-22): „pamatė, kad pralaimės, ir išjungė žaidimą" nebeturi būti
  *   nemokamas. Kokia dalis dar GYVŲ pabėgusiojo NFT unitų nubaudžiama tuo pačiu keliu kaip kritusieji
  *   mūšyje (_rollInjury → ligoninė; įjungus mirtį — ir 10% žūtis). 0 = išjungta (senas elgesys). */
-const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0.5;
+const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0;   // 2026-08-25 (user): IŠJUNGTA. Grąžinti — F9_DESERT_PCT=0.5
 /* ⚔ Vienos komandos mūšio suvestinė. `escaped` = unitai, kuriems NIEKO neatsitiko (dezertyravus nuimti
  * nuo lauko arba nepriskirti) — jie NĖRA nuostolis ir NEGALI būti rodomi kaip mirę. */
 type RosterTeam = { team: number; address: string; units: any[]; survived: number; injured: number; dead: number; escaped: number };
@@ -1972,14 +1972,35 @@ export class F9PvpRoom extends Room<F9State> {
 
   // 🪖 REINFORCEMENT: aktyvus unitas krito → jei žaidėjas turi rezervą (dekas >12), įleidžiam vieną prie savo
   //   krašto → laiko ≤MAX_ACTIVE aktyvių. Didesnis dekas = daugiau pastiprinimų = ilgesnis atsparumas.
+  /* 🪖🔁 REZERVO EILĖS ATSTATYMAS (2026-08-25, user: „puolant rezervas veikia, ginantis — ne").
+   * `_reserves` buvo SĄRAŠAS, sudaromas VIENĄ kartą (_spawnSquadFor / _deployReady / set_squad) ir toliau
+   * tik trumpėjantis per `pool.shift()`. O skaičius, kurį žaidėjas mato (`mineReserve`), ateina iš
+   * `_fieldCounts()` ir perskaičiuojamas GYVAI. Kai unitai pasveiksta PO būrio sudarymo (lova arba BLESS)
+   * arba kai eilę išsėmė ankstesnis raidas toje pačioje pilies sesijoje, rodyklė kyla, o eilė lieka tuščia.
+   * PUOLANT to nesimatė: būrys sudaromas prieš pat kovą, tad eilė nespėja pasenti. GINANTIS pilies kambarys
+   * gyvuoja valandas — todėl gynėjo pastiprinimai praktiškai neveikė (istorija: 0–4 mačai iš 10–24).
+   * DABAR: radę tuščią eilę, ją perskaičiuojam ta pačia formule, kurią naudoja rodyklė. */
+  private _rebuildReserve(p: F9Player): DeckEntry[] {
+    const addr = String(p.address || "").trim().toLowerCase();
+    const inj = this._injuredSet(addr), dead = this._deadSet(addr);
+    /* Į lauką jau patekusius (GYVUS AR KRITUSIUS šiame mūšyje) praleidžiam — tas pats anti-dublio
+     * principas kaip žemiau `_tryReinforce`: tas pats NFT negali įeiti antrą kartą. */
+    const onField = new Set<string>();
+    this.state.units.forEach((u) => { if (u.owner === p.sessionId && u.tokenId) onField.add(u.tokenId); });
+    const pool = this._pureDeck(this._decks.get(p.sessionId) || [])
+      .filter((e) => e.tokenId && !/^dev/i.test(e.tokenId) && !inj.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId));
+    this._reserves.set(p.sessionId, pool);
+    return pool;
+  }
+
   private _tryReinforce(fallen: F9Unit) {
-    const pool = this._reserves.get(fallen.owner);
-    if (!pool || !pool.length) return;
+    let pool = this._reserves.get(fallen.owner);
     const p = this.state.players.get(fallen.owner);
     /* 🪖 08-21: AI gynėjas (async raidas) rezervą turi TAIP PAT kaip žmogus — jo pilis, jo unitai.
      * Anksčiau čia buvo `if (!p) return`, todėl offline gynėjo dekas mūšyje nedalyvaudavo visai. */
-    if (!p && fallen.owner === AI_DEF_OWNER) { this._reinforceAiDefender(fallen, pool); return; }
+    if (!p && fallen.owner === AI_DEF_OWNER) { if (!pool || !pool.length) return; this._reinforceAiDefender(fallen, pool); return; }
     if (!p) return;                                    // stress/kiti savininkai rezervo neturi
+    if (!pool || !pool.length) { pool = this._rebuildReserve(p); if (!pool.length) return; }   // 🔁 eilė pasenusi/išsemta → perskaičiuojam
     // 🔒 07-04 ANTI-DUBLIS: praleidžiam rezervo įrašus, kurių tokenId JAU yra lauke (gyvas AR kritęs
     //   šiame mūšyje) — kitaip tas pats NFT įeitų antrą kartą (dvigubas injury roll, „prisikėlimas").
     const onField = new Set<string>();
@@ -2954,11 +2975,11 @@ export class F9PvpRoom extends Room<F9State> {
     try {
       const next = cur + 1;
       if (!(await this._spendBones(client, BLESS_GEN_COST[next] || 0, "Bless Generator L" + next))) return;
-      // pakartotinė patikra PO kaulų nurašymo (kitas klik'as/raidas galėjo įsiterpti kol laukėm banko)
+      // pakartotinė patikra PO kaulų nurašymo (kitas klik’as/raidas galejo įsiterpti kol laukėm banko)
       if (this.state.players.size > 1 || (this._buildings.blessGenLevel || 0) >= next) return;
       this._buildings.blessGenLevel = next;
       this._persistStructures(this._ownerAddr);
-      const _insta = await blessInsta(this._ownerAddr);   // šviežios paros lubos UI'ui (cap jau su nauju lygiu)
+      const _insta = await blessInsta(this._ownerAddr);   // šviežios paros lubos UI’ui (cap jau su nauju lygiu)
       try { client.send("blessgen_upgraded", { level: next, max: next >= BLESS_GEN_MAX_LVL, nextCost: BLESS_GEN_COST[next + 1] || 0, insta: _insta }); } catch (_) {}
       console.log(`[F9PvpRoom] ⚡🏭 bless generator → L${next} (-${BLESS_GEN_COST[next] || 0}🦴, +${next} BLESS/parą) ${this._ownerAddr.slice(0, 10)}…`);
     } finally { this._upgBusy = false; }

@@ -233,18 +233,32 @@
   // ⛏️ VIEŠAS pilies RONKE kasimo potas (07-12 ekonomikos redizainas: pasyvus uždarbis = RONKE mining,
   //   kaulų gen OFF; grobis = 50% mining pot per 100% wipe). == serverio _mineRateFrom formulė iš persistintų
   //   buildings laukų (minePot/mineField/mineReserve/cemPower/shieldUntil). Display only; tikras grobis — server-auth.
-  function estPot(b) {
+  // ⚠️ 08-21 FIX (user: „REWARDS pusę valandos nejuda, nors jis turi didelį power"): formulė buvo PASENUSI —
+  //   (a) skaičiavo lauko FRAKCIJĄ iš persistuoto `mineField`, kuris offline žaidėjui dažnai lieka 0 →
+  //       frac=0 → rate=0 → pot UŽŠALDAVO (serveris tuo metu realiai kasė!);
+  //   (b) power×0.1 be „knee" ir ×0.5 „success" — serveris seniai skaičiuoja kitaip.
+  //   Dabar veidrodis serverio `_mineRateFrom` + `_mineFieldStored` (offline = snapshot unitai − sužaloti − mirę).
+  //   ⚠️ Ronke Score daugiklis (×1.05…×1.5) čia NEĮSKAIČIUOTAS — svetimo score klientas nežino, tad
+  //   rodoma reikšmė yra KUKLIAUSIA (tikras grobis gali būti didesnis).
+  function estPot(b, units) {
     if (!b || typeof b !== 'object') return 0;
-    var nft = +b.cemNft || 0, rv = +b.cemRv || 0, wallet = +b.cemWallet || 0;
-    var eligible = (rv >= 1 && nft >= 10) || (nft >= 12 && wallet >= 69);
-    var onF = +b.mineField || 0, res = +b.mineReserve || 0, reg = onF + res;
-    var frac = reg > 0 ? onF / reg : 0;
-    var raw = (frac > 0 ? 10 : 0) + Math.min(+b.cemPower || 0, 4000) * 0.1 * frac;   // MINE_BASE_H + power×0.1×frakcija
-    var shielded = (Number(b.shieldUntil) || 0) > Date.now();
-    var rate = eligible ? raw * (shielded ? 0.5 : 1) * 0.5 : 0;   // ×0.5 success (efektyvus, kaip serveris)
+    var rv = +b.cemRv || 0, wallet = +b.cemWallet || 0;
+    var bad = {};
+    (Array.isArray(b.injured) ? b.injured : []).forEach(function (i) { if (i && i.tokenId != null) bad[String(i.tokenId)] = 1; });
+    (Array.isArray(b.deadUnits) ? b.deadUnits : []).forEach(function (t) { bad[String(t)] = 1; });
+    var healthy = 0;
+    (Array.isArray(units) ? units : []).forEach(function (u) { if (u && u.tokenId && !/^dev/i.test(String(u.tokenId)) && !bad[String(u.tokenId)]) healthy++; });
+    var onF = Math.max(+b.mineField || 0, Math.min(RAID_MIN_DEFENDERS, healthy));   // == serverio _mineFieldStored (offline)
     var pot = +b.minePot || 0;
-    if (rate > 0 && +b.cemTick > 0) pot += rate * Math.max(0, Date.now() - (+b.cemTick)) / 3600000;
-    return Math.min(5000, pot);   // MINE_CAP
+    var eligible = onF >= RAID_MIN_DEFENDERS && (rv >= 1 || wallet >= 69);
+    if (!eligible) return Math.min(1000, pot);
+    var safe = b.dutyMode === 'safe';
+    var pw = Math.min(+b.cemPower || 0, 4000);
+    var powTerm = Math.min(pw, 250) * 0.05 + Math.max(0, pw - 250) * 0.05 * 0.25;    // knee @250 (virš — ¼ tempo)
+    var rate = ((safe ? 5 : 10) + powTerm) * (((Number(b.shieldUntil) || 0) > Date.now()) ? 0.5 : 1);
+    if (+b.cemTick > 0) pot += rate * Math.max(0, Date.now() - (+b.cemTick)) / 3600000;
+    var cap = safe ? Math.max(200, +b.mineCheckpoint || 200) : 1000;                 // SAFE stoja ties checkpoint; DUTY — 1000 stogas
+    return Math.min(cap, pot);
   }
   var STEAL_PCT = 0.5;   // == serverio MINE_STEAL_PCT — 100% wipe atveju puolikas gauna 50% poto
   var RAID_MIN_DEFENDERS = 12;   // == serverio RAID_FIELD_REQ (F9PvpRoom) — ta pati riba kaip kasimo
@@ -283,7 +297,7 @@
       list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;line-height:1.7;padding:8px 0;">No raidable castles right now. Only castles with <b style="color:#c9d4e8;">' + RAID_MIN_DEFENDERS + '+ units on the field</b> (the ones actually mining RONKE) can be raided.</div>';
       return;
     }
-    rows.forEach(function (r) { r._pot = estPot(r.buildings); });
+    rows.forEach(function (r) { r._pot = estPot(r.buildings, r.units); });
     rows.sort(function (a, b) { return b._pot - a._pot; });   // riebiausios kapinės viršuje — rinkis auką!
     list.innerHTML = '';
     rows.forEach(function (r) {
@@ -329,8 +343,9 @@
 
   function closePanel() {
     if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
-    // ⚔️🔔 pažiūrėjai sąrašą → virpėjimas nebereikalingas; kitas NAUJAS gyvas taikinys vėl praneš
+    // ⚔️🔔 pažiūrėjai sąrašą → 2 min tylos (po to vėl primins, jei taikinių tebėra)
     try {
+      _snoozeUntil = Date.now() + SNOOZE_MS;
       if (_shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
       if (_shakeT) { clearTimeout(_shakeT); _shakeT = null; }
       var _rb = _raidBtnEl(); if (_rb) _rb.classList.remove('f9-raid-shake');
@@ -345,6 +360,9 @@
   //    Tikrinam kas 60s TIK savo pilyje + kai skirtukas matomas + panelė uždaryta (atidaręs jau matai pats).
   //    Pirmas ciklas = bazinė linija (nevirpa) — kitaip virptelėtų kiekvieną kartą įėjus į pilį.
   var _liveSeen = null, _liveTimer = null, _shakeT = null, _shakeLoopT = null;
+  var REMIND_MS = 25000;      // kol sąraše yra ką pulti — primename kas ~30s (kiekvieną skenavimo ciklą)
+  var SNOOZE_MS = 120000;     // ką tik žiūrėjai sąrašą → 2 min tylos, kad neerzintų
+  var _snoozeUntil = 0;
   function _raidBtnEl() { try { return document.getElementById('wui-raid-btn'); } catch (_) { return null; } }
   function _shakeCss() {
     if (document.getElementById('f9-raid-shake-css')) return;
@@ -361,44 +379,45 @@
     if (_shakeT) clearTimeout(_shakeT);
     _shakeT = setTimeout(function () { var e = _raidBtnEl(); if (e) e.classList.remove('f9-raid-shake'); }, 4700);
   }
-  // Kartojam kas 45s kol tas taikinys vis dar gyvas (kaip tetris loop) — kad nepražiopsotum.
-  function _startShakeLoop() {
-    _shakeRaidBtn();
-    if (_shakeLoopT) return;
-    _shakeLoopT = setInterval(function () {
-      if (panel || !window.__f9HomeActive || window.__f9RaidActive || document.hidden) return;
-      if (!_liveSeen || !_liveSeen.size) { clearInterval(_shakeLoopT); _shakeLoopT = null; return; }
-      _shakeRaidBtn();
-    }, 45000);
-  }
-  // Ar eilutė = puolamas GYVAS taikinys (tie patys filtrai kaip renderList + online heartbeat <90s).
-  function _isLiveTarget(r, me) {
+  // Ar eilutė = PUOLAMAS taikinys — TIE PATYS filtrai kaip renderList (be online reikalavimo!).
+  //   ⚠️ 08-21 fix: anksčiau reikalavom ir `ownerSeenAt < 90s` (savininkas prie ekrano) — tokių praktiškai
+  //   nebūna (matuota: 200 pilių → 14 puolamų, bet 0 online), todėl ženkliukas nevirpėdavo NIEKADA.
+  //   Dabar praneša apie bet kokį naują taikinį sąraše; online tik sustiprina (kartojam priminimą).
+  function _isRaidTarget(r, me) {
     var a = String(r.ronin_address || '').toLowerCase();
     if (!a || a === me || a.indexOf('#') >= 0) return false;
     if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;
     var b = r.buildings || {};
     if (b.dutyMode === 'safe') return false;
     if ((Number(b.shieldUntil) || 0) > Date.now()) return false;        // po skydu — nepuolamas
-    if (combatReady(r) < RAID_MIN_DEFENDERS) return false;              // <12 lauke — nepuolamas
-    return (Date.now() - (Number(b.ownerSeenAt) || 0)) < 90000;         // 🫀 prie ekrano
+    return combatReady(r) >= RAID_MIN_DEFENDERS;                        // 12+ lauke = puolamas
   }
+  function _isOnline(r) { return (Date.now() - (Number((r.buildings || {}).ownerSeenAt) || 0)) < 90000; }
   function _liveScan() {
     if (!window.__f9HomeActive || window.__f9RaidActive || document.hidden || panel) return;   // panelė atidaryta → matai pats
     if (!myAddr()) return;
     fetchCastles().then(function (rows) {
       var me = myAddr();
-      var now = new Set();
-      (rows || []).forEach(function (r) { if (_isLiveTarget(r, me)) now.add(String(r.ronin_address).toLowerCase()); });
+      var now = new Set(), anyOnline = false;
+      (rows || []).forEach(function (r) {
+        if (!_isRaidTarget(r, me)) return;
+        now.add(String(r.ronin_address).toLowerCase());
+        if (_isOnline(r)) anyOnline = true;
+      });
       var fresh = 0;
       now.forEach(function (a) { if (!_liveSeen || !_liveSeen.has(a)) fresh++; });   // pirmas ciklas: VISI = nauji
       _liveSeen = now;
-      try { if (window.__f9RaidDebug) console.log('[RaidWatch] gyvų taikinių:', now.size, '| naujų:', fresh); } catch (_) {}
-      if (fresh > 0) _startShakeLoop();
-      else if (!now.size && _shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; }
-    }).catch(function () {});
+      try { if (window.__f9RaidDebug) console.log('[RaidWatch] taikinių:', now.size, '| naujų:', fresh, '| online:', anyOnline, '| snooze:', Math.max(0, Math.round((_snoozeUntil - Date.now()) / 1000)) + 's'); } catch (_) {}
+      // ⚔️🔔 08-21 (user: „matau taikinį, o mygtukas nevirpa"): virpam ne tik dėl NAUJŲ — kol sąraše
+      //   apskritai yra ką pulti, primenam periodiškai (kaip tetris mygtukas, kol kažkas laukia varžovo).
+      //   NAUJAS taikinys → iškart. Priminimas → kas REMIND_MS. Atsidarius sąrašą → tyla SNOOZE_MS.
+      if (!now.size) { if (_shakeLoopT) { clearInterval(_shakeLoopT); _shakeLoopT = null; } return; }
+      if (fresh > 0) { _snoozeUntil = 0; _shakeRaidBtn(); _snoozeUntil = Date.now() + REMIND_MS; return; }
+      if (Date.now() >= _snoozeUntil) { _shakeRaidBtn(); _snoozeUntil = Date.now() + REMIND_MS; }
+    }).catch(function (e) { try { if (window.__f9RaidDebug) console.warn('[RaidWatch] klaida:', e); } catch (_) {} });
   }
-  _liveTimer = setInterval(_liveScan, 45000);
-  setTimeout(_liveScan, 5000);   // netrukus po įėjimo: jau esantis gyvas taikinys irgi praneša
+  _liveTimer = setInterval(_liveScan, 30000);
+  setTimeout(_liveScan, 4000);   // netrukus po įėjimo: jau esantys taikiniai irgi praneša
 
   // 07-03: senas plaukiojantis top-right pill'as IŠJUNGTAS — RAID entry point dabar dock'e
   //   (wallet-ui.js ⚔️ mygtukas → window.F9RaidUI.open). Tick liko tik auto-uždaryti panelę išėjus iš home.
