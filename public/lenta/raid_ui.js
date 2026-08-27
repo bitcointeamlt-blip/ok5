@@ -42,6 +42,10 @@
             attacker: b.attacker || '', defender: b.defender || '', winner: b.winner || '',
             atk_survived: (b.atkSurvived | 0), atk_injured: (b.atkInjured | 0), atk_dead: (b.atkDead | 0),
             def_survived: (b.defSurvived | 0), def_injured: (b.defInjured | 0), def_dead: (b.defDead | 0),
+            // 🏃 08-23: pasitraukę be nuostolio. Seni įrašai lauko neturi → null ⇒ „DEAD" jiems nerodom
+            //    (ten tas skaičius buvo klaidingas: dezertyravus nuimti unitai, o ne prarasti NFT).
+            atk_escaped: (b.atkEscaped == null ? null : (b.atkEscaped | 0)),
+            def_escaped: (b.defEscaped == null ? null : (b.defEscaped | 0)),
             // 🦴 pusių kill-loot (nauji įrašai; seni be laukų → null, tada eilutė nerodoma)
             atk_bones: (b.atkBones == null ? null : +b.atkBones), def_bones: (b.defBones == null ? null : +b.defBones),
             loot: +(b.bones || 0),   // 💰 pavogtas mining pot RONKE (fullWipe steal)
@@ -98,8 +102,14 @@
       var atk = role === 'attacker';
       var addr = atk ? m.attacker : m.defender;
       var sv = atk ? m.atk_survived : m.def_survived, inj = atk ? m.atk_injured : m.def_injured, dd = atk ? m.atk_dead : m.def_dead;
+      var esc = atk ? m.atk_escaped : m.def_escaped;
       var bones = atk ? m.atk_bones : m.def_bones;
-      var army = (sv | 0) + (inj | 0) + (dd | 0);
+      var army = (sv | 0) + (inj | 0) + (dd | 0) + (esc | 0);
+      /* 🏃 08-23 FIX: seni įrašai (esc == null) `dead` lauke turi SUMAIŠYTUS tikrus žuvusius ir tuos,
+       * kurie tiesiog buvo nuimti nuo lauko dezertyravus. Rodyti tokį skaičių raudonu „DEAD" reiškia
+       * meluoti žaidėjui, kad prarado NFT (žr. match_Mj4IjyRdf: 4 „mirę", o DB — nė vieno). Todėl
+       * seniems įrašams skaičių rodom neutraliai ir su paaiškinimu. */
+      var legacyDead = (esc == null && (dd | 0) > 0);
       var won = m.winner === role;
       var col = atk ? '#ff9a98' : '#8cd0ff';
       // 📝 07-15 user: adresas TOJE PAČIOJE eilutėje kaip ATTACKER/DEFENDER; statistika ŽODŽIAIS+skaičiais
@@ -123,7 +133,12 @@
           stat('UNITS', army, '#e8eef8', 'Units fielded') +
           stat('SURVIVED', (sv | 0), '#6fcf5c', 'Units that survived unharmed') +
           stat('INJURED', (inj | 0), '#e8a54a', 'Units injured (hospital)') +
-          stat('DEAD', (dd | 0), '#ff6b6b', 'Units killed') +
+          (legacyDead
+            ? stat('LEFT FIELD', (dd | 0), '#8a9aaa', 'Older record: units taken off the field when a player quit. This is NOT a loss — no NFT was destroyed.')
+            : stat('DEAD', (dd | 0), (dd | 0) > 0 ? '#ff6b6b' : '#8a9aaa', 'Units permanently lost (NFT burned on-chain)')) +
+          (esc != null && (esc | 0) > 0
+            ? stat('ESCAPED', (esc | 0), '#8a9aaa', 'Left the field unharmed when the player quit — still in your deck')
+            : '') +
           stat('BONES LOOT', bonesVal, bonesCol, 'Bones looted from kills') +
           lootHtml +
         '</div></div>';

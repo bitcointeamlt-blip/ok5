@@ -3014,6 +3014,8 @@ function _getVisibleCanvasRect() {
 // pixel-perfect (jokio stretch/deformacijos). Kiti aukštai — fiksuotas
 // advCanvasW×ADV_CANVAS_H su scale(1.32) kaip visada.
 let _f9FullscreenOn = false;
+let _f9LastVpW = 0, _f9LastVpH = 0;   // 📱 paskutinis viewport (orientacijos apsivertimui aptikti — žr. _f9SyncCanvasSize)
+const _f9ZoomByOri = {};              // 📱 mastelis atskirai portrait/landscape — kad pasukus pirmyn-atgal vaizdas grįžtų TOKS PAT
 // 🔍 F9 PASAULIO zoom (pinch pritraukimas/atitolinimas): 1=100%, <1=atitolinta. TIK F9 world pass'ui —
 //   UI (kortelės/mygtukai/juostos) piešiasi setTransform(1,..) screen-space ir NEskaluojasi.
 //   Keičia pinch gestas (_installF9Touch) ribose [0.45..1.4]. Default telefone 0.7 (matosi daugiau arenos).
@@ -3038,6 +3040,28 @@ function _f9SyncCanvasSize() {
     // unitų po resize). Min 320 tik nuo 0-dydžio apsauga.
     const w = Math.max(320, Math.floor(rawW * _f9Z));
     const h = Math.max(320, Math.floor(rawH * _f9Z));
+    /* 📱🔄 08-23 (Ronkelife.ron: „rotated to have a better view but makes it worse — and the units
+     * disappears"). `_f9WorldZoom` yra FIKSUOTAS (telefone 0.7, keičia tik pinch) ir į ekrano aukštį
+     * nereaguoja. Pasukus telefoną aukštis nukrenta ~1400→~600 px, o mastelis lieka tas pats ⇒ matomo
+     * pasaulio aukštis sumažėja daugiau nei perpus, ir pilies apačioje stovintys unitai išsprūsta už
+     * kadro. Jie NEdingsta — jų tiesiog nebematyti, bet žaidėjui atrodo, kad prarado.
+     * Dabar PASUKUS (kai portrait↔landscape apsiverčia) mastelį perskaičiuojam taip, kad matomo pasaulio
+     * AUKŠTIS liktų toks pat: landscape'e automatiškai atitolinam ⇒ vertikaliai matai tiek pat, o
+     * horizontaliai daugiau. Reaguojam TIK į apsivertimą — kad URL juostos slinkimas (nuolatiniai smulkūs
+     * `visualViewport` resize'ai) masteliо nenudreifuotų. Pinch lieka nepaliestas. */
+    try {
+      var _wasLand = (_f9LastVpW || 0) > (_f9LastVpH || 0), _isLand = w > h;
+      if (_f9LastVpH && _isLand !== _wasLand && typeof window._f9Zoom === 'number') {
+        /* Mastelį įsimenam ATSKIRAI kiekvienai orientacijai. Be to grįžimas nebūtų simetriškas:
+         * clamp'as ties 0.45 „nurėžia" dalį, ir 0.7 → landscape → atgal duotų 1.05, t. y. žaidėjo
+         * portrait vaizdas pasikeistų vien nuo pasukimo pirmyn-atgal. Dabar grįžus atstatom TIKSLIAI. */
+        _f9ZoomByOri[_wasLand ? 'land' : 'port'] = window._f9Zoom;
+        var _saved = _f9ZoomByOri[_isLand ? 'land' : 'port'];
+        var _z2 = (typeof _saved === 'number') ? _saved : window._f9Zoom * (h / _f9LastVpH);
+        window._f9Zoom = Math.max(0.45, Math.min(1.4, _z2));
+      }
+      _f9LastVpW = w; _f9LastVpH = h;
+    } catch (_) {}
     if (canvas.width !== w || canvas.height !== h) {
       advCanvasW = w;
       canvas.width = w;
@@ -9880,6 +9904,7 @@ function _f9MktInboxPoll() {
     Promise.all([W.marketGetActiveListings(0, 100), W.offersGetTokens(0, 200)]).then(function (rr) {
       const list = Array.isArray(rr[0]) ? rr[0] : [], toks = rr[1] || {};
       _f9MktListings = list;                       // švieži listingai (modalas atidarius panaudos)
+      try { _f9MktAskDead(list); } catch (_) {}    // 💀 kurie iš jų pilyje žuvę (serveris turi registrą)
       try { _f9MktEnrichListings(); } catch (_) {} // 🖼 FIX 07-14: poll perrašo listingus BE utype → BROWSE sprite dingdavo; praturtinam iškart (utype/level iš NFT)
       try { _f9MktDetectSales(); } catch (_) {}    // 💰 sold-detect fone (pats push'ins inbox per hook'ą)
       const mine = list.filter(function (L) { return String(L.seller).toLowerCase() === my && toks[String(L.tokenId)] && toks[String(L.tokenId)].count > 0; }).slice(0, 15);
@@ -10135,7 +10160,26 @@ function _f9MktDoList(unit) {
   });
 }
 // BUY — žaidėjas PATS pasirašo + moka gas (marketBuy: approve RONKE jei reikia → buy).
+/* 💀 Paklausiam serverio, kurie iš listinguojamų tokenų pilyje žuvę. Atsakymas ateina `dead_check`
+ * žinute (žr. f9_pvp_live.js) ir papildo `window._f9DeadUnits`. */
+function _f9MktAskDead(list) {
+  try {
+    const ids = (list || []).map(function (L) { return String(L.tokenId); }).filter(Boolean).slice(0, 300);
+    if (!ids.length) return;
+    if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('dead_check', { tokenIds: ids });
+  } catch (_) {}
+}
+// f9_pvp_live.js kviečia gavęs atsakymą — perpiešiam atidarytą marketą su 💀 ženklais
+window._f9MktRenderIfOpen = function () {
+  try { if (_f9MktOverlayEl) _f9MktRenderBody(); } catch (_) {}
+};
 function _f9MktDoBuy(listing) {
+  /* 💀 ANTRAS SLUOKSNIS: net jei kortelė pasenusi (mirtis įvyko atidarius marketą), pirkti neleidžiam —
+   * kitaip pirkėjas sumokėtų RONKE už unitą, kurio žaidime nebėra ir nebebus. */
+  if ((window._f9DeadUnits instanceof Set) && window._f9DeadUnits.has(String(listing.tokenId))) {
+    _f9MktStatusMsg = '💀 Unit #' + listing.tokenId + ' died in a castle battle — it can never fight again, so it cannot be bought.';
+    _f9MktRenderBody(); return;
+  }
   // LOKALUS test — simuliuojam pirkimą (pašalinam listingą)
   if (_f9MktIsLocal()) {
     _f9MktLocalSet(_f9MktLocalGet().filter(function (x) { return String(x.tokenId) !== String(listing.tokenId); }));
@@ -10680,15 +10724,23 @@ function _f9MktRenderBody() {
         } else {
           _offerUi = '<button data-offer="' + _k + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:7px;font-family:inherit;font-size:8px;border-radius:6px;border:1px solid #3d6a2e;background:rgba(108,207,92,0.10);color:#8fd47c;cursor:pointer;">💰 MAKE OFFER' + (_offInfo && _offInfo.count ? ' · best ' + _offInfo.bestRonke : '') + '</button>';
         }
-        html += '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:9px;background:rgba(0,0,0,0.3);border:1px solid ' + (mine ? '#6a4a18' : '#4a3a18') + ';">' +
-          (hasSpr ? '<div style="display:flex;justify-content:center;padding:4px 0;">' + spr + '</div>' : '') +
-          '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:12px;color:#e8dcc0;flex:1;">' + title + '</span>' + (mine ? '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;">YOURS</span>' : '') + '</div>' +
+        /* 💀 Pilyje žuvęs unitas: NFT dar gali gulėti grandinėje (jei nesudegintas), bet žaidime jo
+         * nebėra ir niekada nebebus. Pirkėjas privalo tai matyti — ir negalėti nusipirkti. */
+        const _isDead = (window._f9DeadUnits instanceof Set) && window._f9DeadUnits.has(String(L.tokenId));
+        html += '<div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:9px;background:rgba(0,0,0,0.3);border:1px solid ' + (_isDead ? '#7a2a2a' : (mine ? '#6a4a18' : '#4a3a18')) + ';' + (_isDead ? 'opacity:.72;' : '') + '">' +
+          (hasSpr ? '<div style="display:flex;justify-content:center;padding:4px 0;' + (_isDead ? 'filter:grayscale(1);' : '') + '">' + spr + '</div>' : '') +
+          '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:12px;color:#e8dcc0;flex:1;">' + title + '</span>' +
+            (_isDead ? '<span style="font-size:7px;color:#e88;background:rgba(232,93,93,0.16);padding:2px 6px;border-radius:4px;letter-spacing:.5px;">💀 DEAD</span>' : '') +
+            (mine ? '<span style="font-size:7px;color:#ffcf5c;background:rgba(255,207,92,0.14);padding:2px 6px;border-radius:4px;">YOURS</span>' : '') + '</div>' +
           '<div style="font-size:15px;color:#ffcf5c;">' + L.priceRonke + ' <span style="font-size:9px;">RONKE</span></div>' +
           '<div style="font-size:7px;color:#5a6a7a;">' + (hasSpr ? '#' + L.tokenId + ' · ' : '') + 'seller ' + String(L.seller).slice(0, 6) + '…' + String(L.seller).slice(-4) + '</div>' +
-          (mine
-            ? '<button data-cancel="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #a55;background:rgba(180,80,80,0.15);color:#e88;cursor:pointer;">CANCEL</button>'
-            : '<button data-buy="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #ffcf5c;background:rgba(255,207,92,0.16);color:#ffcf5c;cursor:pointer;">🛒 BUY</button>') +
-          _offerUi +
+          (_isDead
+            ? '<div style="font-size:8px;color:#e88;line-height:1.5;">This unit died in a castle battle — it can never fight again. ' + (mine ? 'Cancel the listing.' : 'Not for sale.') + '</div>'
+              + (mine ? '<button data-cancel="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #a55;background:rgba(180,80,80,0.15);color:#e88;cursor:pointer;">CANCEL</button>' : '')
+            : (mine
+              ? '<button data-cancel="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #a55;background:rgba(180,80,80,0.15);color:#e88;cursor:pointer;">CANCEL</button>'
+              : '<button data-buy="' + L.tokenId + '" ' + (_f9MktBusy ? 'disabled' : '') + ' style="padding:9px;font-family:inherit;font-size:9px;border-radius:6px;border:1px solid #ffcf5c;background:rgba(255,207,92,0.16);color:#ffcf5c;cursor:pointer;">🛒 BUY</button>')) +
+          (_isDead ? '' : _offerUi) +
           '</div>';
       }
       html += '</div>';
@@ -12081,16 +12133,24 @@ function _f9HospRenderShield() {
   if (!all.length || !home) { box.innerHTML = ''; return; }
   const unprot = all.filter((id) => !shield.has(id));
   const cost = Math.min(unprot.length, bal);
+  /* 💀 REALI mirties rizika iš serverio. Kai ji 0 — skydas saugo nuo NIEKO, tad BLESS leisti neduodam
+   * (08-21 user taisyklė: mirtis 10%, o kol jungiklis išjungtas, žaidėjas neturi pirkti apsaugos veltui). */
+  const deathPct = (typeof window._f9DeathPct === 'number') ? window._f9DeathPct : 0;
+  const risky = deathPct > 0;
   box.innerHTML =
-    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #3a3a55;">' +
+    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #3a3a55;' + (risky ? '' : 'opacity:.62;') + '">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;">' +
         _f9WingsIco(15, 'margin-right:1px;') +
-        '<span style="font-size:10px;color:#aef0f7;letter-spacing:1px;flex:1;">DEATH SHIELD · ' + shield.size + '/' + all.length + ' protected</span>' +
-        (unprot.length && cost > 0
-          ? '<button data-shieldall="1" class="f9-bless-btn" title="Spend 1 BLESS per unit. If a shielded unit would die, it goes to the hospital instead. Burns after the match either way.">' +
-              '<span class="f9-bl-lbl">' + _f9WingsIco(12, 'vertical-align:-2px;margin-right:3px;') + 'PROTECT ALL (' + cost + ')</span></button>'
-          : (unprot.length ? '<span style="font-size:8px;color:#e88;">need BLESS</span>' : '<span style="font-size:8px;color:#8fd47c;">all protected</span>')) +
+        '<span style="font-size:' + (risky ? '9' : '10') + 'px;color:#aef0f7;letter-spacing:' + (risky ? '0.5' : '1') + 'px;flex:1;min-width:0;">DEATH SHIELD · ' + shield.size + '/' + all.length + ' protected</span>' +
+        (risky ? '<span style="font-size:8px;color:#e85d5d;padding:3px 6px;background:rgba(232,93,93,0.12);border:1px solid #7a2a2a;border-radius:4px;white-space:nowrap;" title="Chance that a unit which falls in battle dies for good instead of going to hospital.">' + deathPct + '% death risk</span>' : '') +
+        (!risky
+          ? '<span style="font-size:8px;color:#8a9aaa;" title="Right now a fallen unit always goes to the hospital — nothing to shield against, so BLESS would be wasted.">death is OFF</span>'
+          : (unprot.length && cost > 0
+            ? '<button data-shieldall="1" class="f9-bless-btn" title="Spend 1 BLESS per unit. If a shielded unit would die, it goes to the hospital instead. Burns after the match either way.">' +
+                '<span class="f9-bl-lbl">' + _f9WingsIco(12, 'vertical-align:-2px;margin-right:3px;') + 'PROTECT ALL (' + cost + ')</span></button>'
+            : (unprot.length ? '<span style="font-size:8px;color:#e88;">need BLESS</span>' : '<span style="font-size:8px;color:#8fd47c;">all protected</span>'))) +
       '</div>' +
+      (risky ? '' : '<div style="font-size:8px;color:#6a7a8a;line-height:1.6;margin:-3px 0 7px;">Units that fall are only injured right now — no unit can die, so a shield would buy you nothing. Come back when the death risk shows here.</div>') +
       /* kortelės kaip markete: sprite + #id + Lv (user 08-19: „vietoj numerių — sprite ir minimali info") */
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;max-height:186px;overflow:auto;">' +
         all.map(function (id) {
@@ -12099,9 +12159,9 @@ function _f9HospRenderShield() {
           const spr = (m && m.utype != null)
             ? '<img src="' + _f9MktUnitSprite(m.utype) + '" alt="" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(m.utype) + '\'))">'
             : '<span style="font-size:22px;opacity:.5;">🪖</span>';
-          return '<button ' + (on ? '' : 'data-shieldone="' + id + '" ') +
-            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead (burns after the match)' : 'Spend 1 BLESS to protect this unit') + '" ' +
-            'style="position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 3px;border-radius:7px;font-family:inherit;cursor:' + (on ? 'default' : 'pointer') + ';' +
+          return '<button ' + (on || !risky ? '' : 'data-shieldone="' + id + '" ') +
+            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead (burns after the match)' : (risky ? 'Spend 1 BLESS to protect this unit' : 'Nothing to protect against right now — death is off')) + '" ' +
+            'style="position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 3px;border-radius:7px;font-family:inherit;cursor:' + (on || !risky ? 'default' : 'pointer') + ';' +
             'border:1px solid ' + (on ? '#2a6a74' : '#3a4055') + ';background:' + (on ? 'rgba(74,157,166,0.16)' : 'rgba(0,0,0,0.25)') + ';">' +
             (on ? '<span style="position:absolute;top:2px;right:2px;">' + _f9WingsIco(12, '') + '</span>' : '') +
             spr +
@@ -12110,8 +12170,66 @@ function _f9HospRenderShield() {
             '</button>';
         }).join('') +
       '</div>' +
+      _f9BurnAuthHtml(risky) +
     '</div>';
   _f9ShieldLoadMeta(all);   // trūkstamiems unitams pasiimam utype/level (kaip market enrichment)
+}
+/* ☠️📜 NFT DEGINIMO AUTORIZACIJA (2026-08-21, user: „tokiu pat principu kaip ir ball žaidime").
+ * Ball žaidime prieš mūšį pasirašai, kad žuvęs NFT gali būti sudegintas. Pilyje mūšis vyksta kai MIEGI,
+ * tad parašo tuo momentu paimti neįmanoma — todėl pasirašom IŠ ANKSTO kelis leidimus, ir mirties
+ * momentu serveris panaudoja vieną. Rodom TIK kai mirtis realiai įjungta ir deginimas sukonfigūruotas.
+ * ⚠️ SVARBU (user 08-21: „kad nebūtų jokių išsisukinėjimo atvejų nuo mirties pabėgti"): parašas NĖRA
+ * mirties sąlyga. Miręs unitas dingsta iš žaidimo VISIEMS ir NEGRĮŽTA, pasirašyta ar ne — parašas tik
+ * papildomai sudegina patį NFT grandinėje. Tekstas turi tai pasakyti aiškiai, be dviprasmybių. */
+function _f9BurnAuthHtml(risky) {
+  const st = window._f9BurnAuth;
+  if (!risky || !st || !st.enabled) return '';
+  const have = st.have || 0, need = st.need || 0;
+  const canSign = need > 0 && (st.slots || []).length > 0 && (st.tokens || []).length > 0;
+  return '<div style="margin-top:9px;padding-top:9px;border-top:1px dashed #4a3a3a;">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<span style="font-size:13px;">☠️</span>' +
+      '<span style="font-size:9px;color:' + (have > 0 ? '#e0a0a0' : '#e85d5d') + ';letter-spacing:1px;flex:1;">NFT BURN AUTH · ' + have + ' signed</span>' +
+      (canSign
+        ? '<button id="f9burn-sign" title="Optional. Death is permanent either way — this only lets the dead NFT be burned on-chain, since your castle is raided while you are offline." ' +
+          'style="font-family:inherit;font-size:8px;letter-spacing:0.5px;padding:7px 10px;border-radius:4px;border:1px solid #7a2a2a;background:rgba(232,93,93,0.12);color:#e88;cursor:pointer;">✍ SIGN (' + need + ')</button>'
+        : (need > 0 ? '<span style="font-size:8px;color:#8a9aaa;">waiting for units…</span>' : '<span style="font-size:8px;color:#8fd47c;">ready</span>')) +
+    '</div>' +
+    '<div id="f9burn-note" style="font-size:8px;color:#6a7a8a;line-height:1.6;margin-top:5px;">' +
+      'A unit that dies is gone for good — it never comes back, not even if the NFT changes hands. ' +
+      (have > 0
+        ? 'Signed for ' + st.days + ' days, so the dead NFT also gets burned on-chain. Units saved by ' + '🪽' + ' BLESS are never burned.'
+        : 'Signing is optional and only adds the on-chain burn: your castle is raided while you sleep, so the permission has to be given up front.') +
+    '</div></div>';
+}
+// Parašai imami po vieną (kiekvienas = atskiras piniginės patvirtinimas). Atšaukus — išsaugom ką spėjom.
+async function _f9BurnAuthSign(btn) {
+  const st = window._f9BurnAuth || {};
+  const slots = Array.isArray(st.slots) ? st.slots : [];
+  const tokens = (Array.isArray(st.tokens) ? st.tokens : []).map(String);
+  const W = window.Wallet;
+  const setLbl = (t) => { try { if (btn) btn.textContent = t; } catch (_) {} };
+  // atšaukus / nepavykus — mygtuką grąžinam veikiantį, kad žaidėjas galėtų bandyti dar kartą
+  const reset = () => { try { if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; setLbl('✍ SIGN (' + slots.length + ')'); } } catch (_) {} };
+  if (!slots.length || !tokens.length) { reset(); return; }
+  if (!W || typeof W.signBattleAuth !== 'function') {
+    try { if (window.showGameNotification) window.showGameNotification('☠️ AUTH', 'This wallet cannot sign the authorization — reconnect and try again', '#e85d5d'); } catch (_) {}
+    reset(); return;
+  }
+  const out = [];
+  for (let i = 0; i < slots.length; i++) {
+    setLbl('✍ ' + (i + 1) + '/' + slots.length + '…');
+    try {
+      const r = await W.signBattleAuth({ tokenIds: tokens, battleId: slots[i].battleId, deadline: slots[i].deadline, nonce: slots[i].nonce });
+      if (r && r.signature) out.push({ battleId: String(slots[i].battleId), nonce: String(slots[i].nonce), deadline: slots[i].deadline, sig: r.signature, tokens: tokens });
+      else break;
+    } catch (e) { break; }   // atšaukė / klaida — nebeprašom likusių, siunčiam ką turim
+  }
+  if (!out.length) { reset(); return; }
+  try {
+    if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('burn_auth_put', { auths: out });
+  } catch (_) {}
+  setLbl('✍ saving…');
 }
 /* Unitų meta (utype/level) skydo kortelėms — tas pats šaltinis kaip marketo BROWSE enrichment'e. */
 const _f9ShieldMeta = new Map();
@@ -12150,6 +12268,13 @@ function _f9HospWireShield() {
       _f9HospShieldSend([b.getAttribute('data-shieldone')]);
     };
   });
+  // ☠️📜 permadeath autorizacijos parašai
+  const bsign = box.querySelector('#f9burn-sign');
+  if (bsign) bsign.onclick = function () {
+    if (bsign.disabled) return;
+    bsign.disabled = true; bsign.style.opacity = '.7'; bsign.style.cursor = 'default';
+    _f9BurnAuthSign(bsign);
+  };
   const all = box.querySelector('button[data-shieldall]');
   if (all) all.onclick = function () {
     if (all.classList.contains('busy')) return;
@@ -12238,7 +12363,12 @@ function _f9HospRebuild() {
   const list = Array.isArray(window._f9Hospital) ? window._f9Hospital : [];
   const ready = window._f9HospReady || 0;
   const sig = list.map(i => i.tokenId).join('|') + ':r' + ready + ':b' + ((window._f9HospInsta && window._f9HospInsta.remaining) || 0) + ':i' + ((window.__f9HomeActive && window._f9InstaReady) ? 1 : 0)
-    + ':s' + ((window._f9Shield && window._f9Shield.size) || 0) + '/' + ((window._f9OnField && window._f9OnField.size) || 0) + '/' + ((window._f9Reserve && window._f9Reserve.size) || 0);   // 🪽 skydų/lauko pokytis irgi perpiešia
+    + ':s' + ((window._f9Shield && window._f9Shield.size) || 0) + '/' + ((window._f9OnField && window._f9OnField.size) || 0) + '/' + ((window._f9Reserve && window._f9Reserve.size) || 0)   // 🪽 skydų/lauko pokytis irgi perpiešia
+    /* 💀 rizika ir ☠️ parašų būklė. `at` = paskutinės serverio burn_auth_state žymė — kiekvienas
+     * atsakymas perpiešia sekciją (kitaip pasikeitęs tik `enabled` liktų nepastebėtas ir mygtukas
+     * būtų likęs „disabled" po atšaukto parašymo). */
+    + ':d' + (window._f9DeathPct || 0) + ':a' + ((window._f9BurnAuth && window._f9BurnAuth.have) || 0) + '/' + ((window._f9BurnAuth && window._f9BurnAuth.need) || 0)
+    + '/' + ((window._f9BurnAuth && window._f9BurnAuth.enabled) ? 1 : 0) + '/' + ((window._f9BurnAuth && window._f9BurnAuth.at) || 0);
   if (sig === _f9HospSig) { _f9HospUpdateStatus(); return; }
   _f9HospSig = sig;
   _f9HospRenderShield(); _f9HospWireShield();   // 🪽 DEATH SHIELD sekcija
@@ -12352,6 +12482,7 @@ function _f9CloseHospitalPanel() {
 function _f9ToggleHospitalPanel() {
   if (_f9HospPanelEl) { _f9CloseHospitalPanel(); return; }
   try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_get'); } catch (_) {}   // šviežia eilė
+  try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('burn_auth_state'); } catch (_) {}   // ☠️📜 kiek burn parašų turim / ką pasirašyti
   // 🏥 TUŠČIA ligoninė IR nėra paruoštų deploy'ui → JOKIOS panelės, tik 💬 burbulas virš ligoninės.
   //   ⚔️ 07-04: jei yra PARUOŠTŲ (pasveikę/nespawninti) — panelę ATIDAROM (joje DEPLOY mygtukas).
   // ⚡🎒 08-13: panelė atsidaro ir TUŠČIA, jei yra ko claim'inti ar balansas >0 (kitaip holderis nepasiektų CLAIM)
@@ -12367,10 +12498,12 @@ function _f9ToggleHospitalPanel() {
   const el = document.createElement('div');
   el.style.cssText = 'background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;' +
     'box-shadow:0 0 48px rgba(255,207,92,0.35),inset 0 0 24px rgba(255,207,92,0.08);border-radius:8px;' +
-    'padding:18px 22px;width:520px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;' +   // 520 (buvo 460) — telpa ⚡ BLESS mygtukas (user 2026-07-05)
+    'padding:18px 22px;width:640px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;' +   // 640 (460 → 520 → 640) — antraštėj jau 6 elementai su ⚡🏭 GENERATOR (user 2026-08-22)
     "font-family:'Press Start 2P',monospace,sans-serif;font-size:10px;line-height:1.5;color:#8a9aaa;";
   el.innerHTML =
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
+    /* flex-wrap: antraštėj 6 elementai (BLESS · GLOBAL · CLAIM · ⚡🏭 GENERATOR · counter · ×) — siaurame
+       ekrane (max-width:94vw) jie nebetelpa į vieną eilutę ir anksčiau lipdavo per kraštą. */
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;padding-bottom:10px;border-bottom:1px solid #4a3a18;">' +
       '<span style="font-size:22px;text-shadow:0 0 14px #ffcf5c;">🏥</span>' +
       '<span style="flex:1;font-size:14px;color:#ffcf5c;letter-spacing:1.5px;">HOSPITAL</span>' +
       // ⚡🎒 BLESS itemų balansas (08-13: nebe paros charge\'ai, o kaupiami itemai) + CLAIM mygtukas
@@ -13154,7 +13287,12 @@ function _f9CastlePanelEl() {
       // 🦴 kaina mygtuke — RYŠKI ir DIDESNĖ (user 07-03); ant pilko locked mygtuko — auksinė, kad matytųsi ko trūksta
       '.f9cp-bcost{font-size:12px;letter-spacing:0;white-space:nowrap}' +
       '.f9cp-up.max .f9cp-bcost{color:#ffcf5c;text-shadow:0 0 8px rgba(255,207,92,.4)}' +
-      '.f9cp-cost{font-size:6px;color:#6a7a8a;text-align:center;margin-top:8px;line-height:1.7}';
+      '.f9cp-cost{font-size:6px;color:#6a7a8a;text-align:center;margin-top:8px;line-height:1.7}' +
+      /* ⚡ 08-22: antra kortelės dalis (HOSPITAL = gydymas + BLESS generatorius). Atskiriama linija,
+         kad būtų aišku, jog tai TA PATI ligoninė, o ne naujas pastatas. */
+      '.f9cp-sub{margin-top:13px;padding-top:12px;border-top:1px dashed #3a3a55}' +
+      '.f9cp-note{font-size:6px;color:#7a8a9a;margin-top:8px;line-height:1.9;text-align:center}' +
+      '.f9cp-note b{color:#aef0f7}';
     document.head.appendChild(st);
   }
   p = document.createElement('div'); p.id = 'f9-castle-panel';
@@ -13199,7 +13337,9 @@ function _f9ZipThumb() {
 }
 // 🦴 Upgrade kainos — VEIDRODIS serverio F9PvpRoom.ts (WALL_UPG_COST/TOWER_BUILD_COST/TOWER_UPG_COST).
 //    Display only — tikrą mokėjimą enforce'ina serveris iš banko. Keisk ABIEJOSE pusėse sinchroniškai!
-const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 } };
+/* ⚡ bless: BLESS GENERATOR — antra HOSPITAL kortelės dalis (08-22 user). Raktas = PASIEKIAMAS lygis,
+   kaip ir kitur. Turi sutapti su serverio BLESS_GEN_COST (F9PvpRoom.ts) — serveris yra tiesos šaltinis. */
+const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 }, bless: { 1: 250, 2: 260, 3: 270, 4: 280, 5: 290 } };
 // 🏗️ Pilies panelės KŪNAS — upgrade kortelės (siena dabar; bokštai = STEP2). Skaito lygį LIVE iš S._f9Walls.
 function _f9RenderCastlePanelBody() {
   const body = document.getElementById('f9cp-body'); if (!body) return;
@@ -13278,6 +13418,26 @@ function _f9RenderCastlePanelBody() {
                   (hOk ? ('\u2b06 UPGRADE L' + (hl + 1) + ' (' + NEXT_FX[hl + 1] + ') \u2014 <span class="f9cp-bcost">' + hCost + ' \ud83e\uddb4</span>')
                        : ('\ud83d\udd12 NEED <span class="f9cp-bcost">' + hCost + ' \ud83e\uddb4</span>')) + '</button>' +
                   '<div class="f9cp-cost">PAID FROM BONE BANK</div>') +
+        /* ⚡ BLESS GENERATOR — antra ligoninės dalis (08-22 user: „hospitas irgi bus iš dviejų").
+           Duoda BLESS kas 24h net ir tiems, kurių Ronke Score nesiekia pakopų. Lygis = kiek per parą. */
+        (function () {
+          const _in = window._f9HospInsta || {};
+          const bl = Math.max(0, Math.min(5, _in.genLevel || 0)), bMax = _in.genMax || 5, bIsMax = bl >= bMax;
+          const bCost = _F9_UPG_COST.bless[bl + 1] || 0, bOk = bank >= bCost;
+          let bp = ''; for (let i = 1; i <= bMax; i++) bp += '<div class="f9cp-pip' + (i <= bl ? ' on' : '') + '"></div>';
+          const perDay = bIsMax ? ('<b>' + bl + ' / 24H</b>')
+            : ((bl > 0 ? bl : 0) + ' <span class="arw">→</span> <b>' + (bl + 1) + ' / 24H</b>');
+          return '<div class="f9cp-sub">' +
+            '<div class="ch"><span class="cn">⚡ BLESS GENERATOR</span><span class="clv">' + (bl > 0 ? ('L' + bl + '/' + bMax) : 'NOT BUILT') + '</span></div>' +
+            '<div class="f9cp-pips">' + bp + '</div>' +
+            '<div class="f9cp-stat"><span>BLESS PER 24H</span><span>' + perDay + '</span></div>' +
+            (bIsMax ? '<button class="f9cp-up max">MAX LEVEL</button>'
+                    : '<button class="f9cp-up' + (bOk ? '' : ' max') + '" id="f9cp-blessup"' + (bOk ? '' : ' disabled') + '>' +
+                      (bOk ? ('⚡ BLESS L' + (bl + 1) + ' (+1 / 24H) — <span class="f9cp-bcost">' + bCost + ' 🦴</span>')
+                           : ('🔒 NEED <span class="f9cp-bcost">' + bCost + ' 🦴</span>')) + '</button>') +
+            '<div class="f9cp-note">Generates BLESS every 24h. Level 1 gives you <b>1 per day</b>, and every level adds one more — up to <b>' + bMax + '</b> at L' + bMax + '. Adds on top of your Ronke Score tier. Come back to CLAIM it — unclaimed days do not stack.</div>' +
+          '</div>';
+        })() +
         '</div>';
     })() +
     // \ud83d\udee1 RAID SHIELD \u2014 rodoma TIK kai aktyvus; savininkas gali NUSIIMTI (nori b\u016bti puolamas anks\u010diau)
@@ -13301,6 +13461,9 @@ function _f9RenderCastlePanelBody() {
   if (bt && !bt.disabled && _f9TowerCount() < _F9_MAX_TOWERS) bt.onclick = function () { _f9EnterTowerPlaceMode(); };
   const hb = body.querySelector('#f9cp-hospup');
   if (hb && !hb.disabled) hb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeHospital) window.F9PvpLive.upgradeHospital(); };
+  // ⚡ BLESS GENERATOR — ta pati ligoninės kortelė, antras mygtukas (serveris validuoja viską pats)
+  const bgb = body.querySelector('#f9cp-blessup');
+  if (bgb && !bgb.disabled) bgb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeBlessGen) window.F9PvpLive.upgradeBlessGen(); };
   const sb = body.querySelector('#f9cp-shieldoff');
   if (sb) sb.onclick = function () {
     window.__f9ShieldUntil = 0;   // optimistinis — serveris patvirtins 'shield {until:0}' žinute

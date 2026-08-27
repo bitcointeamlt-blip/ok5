@@ -3,10 +3,14 @@ import { F9State, F9Player, F9Unit, F9Wall } from "../schema/F9State";
 import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { bakRecord, healStructures } from "../services/BaseBackup";
+import { burnAuthAdd, burnAuthCount, BURN_AUTH_TARGET, BURN_AUTH_DAYS } from "../services/F9BurnAuth";   // 🔥📜 iš anksto pasirašytos burn autorizacijos
+import { burnDeadUnits, burnEnabled } from "../services/F9Burn";                                          // 🔥 NFT deginimas mirties momentu
+import { deadAdd, deadAll, deadEnsure, deadFlushPending } from "../services/DeadRegistry";                // 💀🌍 miręs tokenas miręs VISIEMS (ne tik savininkui)
+import { deathProtected, deathGuardNote, deathGuardBanner, sandboxToken } from "../services/DeathGuard";   // 💀🛡 lokalus serveris nemarina TIKRŲ NFT
 import { loadBaseUnits, saveBaseUnits, loadBaseBuildings, baseRowExists, saveBaseBuildings, loadBoneBank, saveBoneBank, addBones, boneBankOp, appendRaidReport, loadRaidReports, logMatch, type SnapshotUnit, type BaseBuildings, type InjuredUnit } from "../services/BaseStore";
 import { claimMintReward } from "../services/MintReward";
 import { MineLog } from "../services/MineLog";   // ⛏️📜 kasimo įvykių žurnalas (auditui: kaip uždirbti RONKE)   // 🦴🎫 Ronkeverse holder mint-bonus (2026-07-05)
-import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
+import { blessStatus, blessClaim, blessConsume, blessCredit, blessClaimCap, blessTierLabel, BLESS_GEN_MAX_LVL } from "../services/BlessBank";   // ⚡🎒 BLESS itemai (2026-08-13; pakeitė InstantHeal charge'us)
 import { shieldList, shieldAdd, shieldBurn } from "../services/BlessShield";   // 🪽🛡 BLESS skydas ant unito (2026-08-19)
 import { blessMarketBrowse, blessMarketList, blessMarketCancel, blessMarketReserve, blessMarketBuy, blessMarketFeeBps, blessMarketTreasury } from "../services/BlessMarket";   // ⚡🛒 BLESS itemų prekyba (2026-08-18)
 import { scoreTierCached, scoreTierNow } from "../services/RonkeScore";   // 🏆⛏️ Ronke Score → kasimo lojalumo daugiklis (08-13)
@@ -101,7 +105,14 @@ const FFA_SPAWNS = [
 // Server-authoritative: kolizija (side-lock — pereiti tik pro vartus) + HP + siege + collapse.
 const WALL_HP = 40;
 const WALL_MAX_LVL = 4;                                    // 🏗️ sienos upgrade lygiai (1 medis → 2-4 akmuo, vis stipresnė)
-const wallHpForLevel = (lvl: number) => WALL_HP * Math.max(1, Math.min(WALL_MAX_LVL, lvl));   // L1=40, L2=80, L3=120, L4=160
+/* 🧱🐢 NERF 2026-08-22 (user): „tiktais paskutinį lygį −10 HP" — nuimam TIK nuo aukščiausio lygio,
+ * žemesni lieka nepaliesti. L1=40 · L2=80 · L3=120 · L4=150 (buvo 160).
+ * maxHp visada perskaičiuojamas iš lygio (spawn'inant ir upgrade'inant), tad migracijos nereikia. */
+const WALL_TOP_LVL_NERF = 10;
+const wallHpForLevel = (lvl: number) => {
+  const L = Math.max(1, Math.min(WALL_MAX_LVL, lvl));
+  return WALL_HP * L - (L === WALL_MAX_LVL ? WALL_TOP_LVL_NERF : 0);   // L1=40, L2=80, L3=120, L4=150
+};
 const WALL_COL = 33;                        // 🧱 PILNA VERTIKALI siena per visą map (x=33) — JOKIO apėjimo
 const WALL_GATE: number[] = [];             // jokių vartų — žaidėjas PRIVALO pralaužti sieną kad eitų toliau
 // 🧱 Pilno aukščio siena (rows 0..ARENA_H-1) + zip bokštai prie galų (viršus/apačia). Kiekviena celė = atskiras
@@ -162,7 +173,10 @@ const towerHpForLevel = (lvl: number) => TOWER_HP * Math.max(1, Math.min(TOWER_M
 const TOWER_DMG_BY_LVL: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5 };   // 🗼 07-18 user NERF: 12 buvo OP (5 bokštai=60/залп) → max 5
 const towerDmgForLevel = (lvl: number) => TOWER_DMG_BY_LVL[Math.max(1, Math.min(TOWER_MAX_LVL, lvl))] || 3; // L1=3, L2=4, L3=4, L4=5
 const TOWER_RANGE = 6.5;    // šaudymo nuotolis (cells)
-const TOWER_CD = 2200;      // cooldown tarp šūvių (ms)
+/* 🗼🐢 NERF 2026-08-22 (user): „3 kartai kas 10 sek" → 10000/3 ≈ 3333 ms tarp šūvių.
+ * Buvo 2200 ms = 4,55 šūvio per 10 s vienam bokštui; dabar lygiai 3,0. Su 5 bokštais залп krenta
+ * nuo ~22,7 iki 15 šūvių per 10 s. Cooldown per-celę, tad kiekvienas bokštas lėtėja vienodai. */
+const TOWER_CD = 3333;      // cooldown tarp šūvių (ms) — 3 šūviai / 10 s
 const TOWER_DMG = 3;        // bolt žala
 const TOWER_FIRE_MS = 380;  // delsa nuo charge iki hit (sutampa su bolt FX)
 
@@ -194,11 +208,31 @@ const RETREAT_MS = 15000;    // 15s palaikyti visus zonoj → atsitraukia
 //   Dev tokenId ('dev0'…) neliečiami.
 //   EILĖS MODELIS (v2, user 2026-07-03): gydosi TIK VIENAS unitas (HEAL_MS=1h), kiti LAUKIA eilėje;
 //   žaidėjas gali pasirinkti, kurį gydyti pirmą ('hospital_heal_first' → perkeliamas į priekį, gydymas nuo 0).
-// 🚑 07-19 (user): 10% MIRTIS IŠJUNGTA KOLKAS → 100% sužalojimai, 0 mirčių. Hardcode 1.0 (ignoruoja env
-//   F9_INJURY_CHANCE, kuris buvo ~0.9 = ~10% mirtis nuo 07-15). GRĄŽINTI 10% mirtį → keisk 1.0 į 0.9
-//   (arba grąžink žemiau užkomentuotą env eilutę). Originalas:
-//   const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Number(process.env.F9_INJURY_CHANCE) : 1.0;
-const INJURY_CHANCE = 1.0;   // 100% sužalojimai (0% mirtis) — laikinai
+/* 💀🪽 MIRTIES TAISYKLĖ (user 2026-08-21 — ĮJUNGTA):
+ *   • Unitas SU uždėtu BLESS skydu — mirties tikimybė jam IŠJUNGTA. Vietoj mirties keliauja į ligoninę.
+ *   • Unitas BE skydo — kovoje realiai gali ŽŪTI, tikimybė 10%.
+ *   • BLESS panaudojimas VIENKARTINIS: nesvarbu, ar unitas buvo sužalotas, ar liko sveikas — kitai kovai
+ *     skydą reikia dėti iš naujo. (Sudega tik tiems, kurie realiai buvo lauke; barakuose laukiantis lieka.)
+ * 🚨 JUNGIKLIS PER ENV — mirtis ĮJUNGIAMA/IŠJUNGIAMA BE DEPLOY'O:
+ *      `F9_INJURY_CHANCE=0.9` → 10% mirtis (taisyklė aktyvi)
+ *      nenustatyta arba `=1`   → mirtis IŠJUNGTA (100% sužalojimai)
+ *    ⚠️ Numatytoji reikšmė SĄMONINGAI 1.0: mechanika kode paruošta ir ištestuota, bet TIKRI NFT negali
+ *    imti mirti dėl kokio nors nesusijusio deploy'o. Įjungimas = sąmoningas env pakeitimas Colyseus Cloud. */
+const INJURY_CHANCE = process.env.F9_INJURY_CHANCE != null ? Math.max(0, Math.min(1, Number(process.env.F9_INJURY_CHANCE))) : 1.0;
+const DEATH_PCT = Math.round((1 - INJURY_CHANCE) * 100);   // rodymui/logams
+/* 🏳️💥 DEZERTYRO BAUSMĖ (user 2026-08-22): „pamatė, kad pralaimės, ir išjungė žaidimą" nebeturi būti
+ *   nemokamas. Kokia dalis dar GYVŲ pabėgusiojo NFT unitų nubaudžiama tuo pačiu keliu kaip kritusieji
+ *   mūšyje (_rollInjury → ligoninė; įjungus mirtį — ir 10% žūtis). 0 = išjungta (senas elgesys). */
+const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0.5;
+/* ⚔ Vienos komandos mūšio suvestinė. `escaped` = unitai, kuriems NIEKO neatsitiko (dezertyravus nuimti
+ * nuo lauko arba nepriskirti) — jie NĖRA nuostolis ir NEGALI būti rodomi kaip mirę. */
+type RosterTeam = { team: number; address: string; units: any[]; survived: number; injured: number; dead: number; escaped: number };
+/* 💀🛡 Startinis įspėjimas: lokalus procesas + tikra DB = TIKRI NFT rizikoje (žr. DeathGuard.ts).
+ *   Tyliai nieko nespausdina prod'e ir kai DB nesukonfigūruota (offline simuliacijos). */
+{ const _b = deathGuardBanner(INJURY_CHANCE); if (_b) console.warn(_b); }
+/* 🔥 Kiek laukiam kitos mirties, kad kelias sudegintume vienu parašu. Mačui pasibaigus (ar kambariui
+ * užsidarant) eilė ištuštinama iškart, tad šis langas tik grupuoja to paties susirėmimo aukas. */
+const BURN_BATCH_MS = Number(process.env.F9_BURN_BATCH_MS) || 12000;
 const HEAL_MS = Number(process.env.F9_HEAL_MS) || 3600 * 1000;   // 1h / unitą (env override testams)
 // 🏥 LIGONINĖS LYGIAI (user 07-04): L2 +1 slotas; L3/L4 −10min gydymui; L5 3-ias slotas.
 const HOSP_MAX_LVL = 5;
@@ -315,9 +349,21 @@ async function chainCounts(addr: string): Promise<{ rv: number; wallet: number }
 //   🪖 08-19 (user): claim'inti gali TIK laikantis ≥12 unitų piniginėje — bless yra armijos priežiūrai,
 //      ne tuščiam farmui. Neįrodžius (RPC tyli) → claim'as neduodamas, bet nieko neįrašom ⇒ para nedingsta.
 const BLESS_MIN_UNITS = Number(process.env.F9_BLESS_MIN_UNITS || 12);
+/* ⚡🏭 BLESS GENERATORIUS (2026-08-22, user): „galimybė generuoti bless tiems, kurie neturi RONKE NFT".
+ * Perkamas pilyje už KAULUS, lygis 1..5. Lygis = +N BLESS į paros emisiją (L1 = 1/parą … L5 = 5/parą).
+ * PRIDEDAMAS prie Score pakopos, ne pakeičia ją (user pasirinkimas: prieinama visiems).
+ * Naudoja TĄ PAČIĄ claim mechaniką (rolling 24h langas, nepasiimta para dingsta) — jokio atskiro laikmačio. */
+const BLESS_GEN_COST: Record<number, number> = { 1: 250, 2: 260, 3: 270, 4: 280, 5: 290 };   // 🦴 už PASIEKIAMĄ lygį
+/* Lygis gyvena pilies `buildings` eilutėje, o claim veikia BET KUR (ne tik savoj pilyje) → skaitom pagal adresą.
+ * DB triktis → 0: emisijos NEpriskaičiuojam, bet ir nieko neišrašom ⇒ para neprarandama (kaip su Score API). */
+async function blessGenLevelOf(addr: string): Promise<number> {
+  try { const b = await loadBaseBuildings(String(addr || "").trim().toLowerCase()); return Math.max(0, Math.min(BLESS_GEN_MAX_LVL, Number(b?.blessGenLevel) || 0)); }
+  catch { return 0; }
+}
 async function blessInsta(addr: string): Promise<any> {
   const t = await scoreTierNow(addr);
-  const st = await blessStatus(addr, t.pct);
+  const gen = await blessGenLevelOf(addr);   // ⚡🏭 generatoriaus lygis pakelia paros lubas
+  const st = await blessStatus(addr, t.pct, gen);
   const cc = await chainCounts(addr);
   const units = cc ? cc.wallet : -1;                    // −1 = nepavyko patikrinti (RPC)
   const gated = !(units >= BLESS_MIN_UNITS);            // neatitinka reikalavimo ARBA nepatikrinta
@@ -326,6 +372,7 @@ async function blessInsta(addr: string): Promise<any> {
     claimable: gated ? 0 : st.claimable,                // mygtukas nerodomas, kol neatitinka
     resetAt: st.resetAt, tier: blessTierLabel(t.pct), pct: t.pct, score: t.score,
     units, minUnits: BLESS_MIN_UNITS, gated,
+    genLevel: gen, genMax: BLESS_GEN_MAX_LVL, genNextCost: BLESS_GEN_COST[gen + 1] || 0,
     supply: st.supply,   // 🌐 globalus BLESS kiekis ŽAIDĖJŲ rankose (dev piniginė išskaičiuota)
   };
 }
@@ -429,7 +476,9 @@ function sanitizeDeck(raw: any): DeckEntry[] {
   for (const e of raw) {               //   registruotą tokenId (raid options.deck); _chainFilterDeck jo NEfiltruoja
     const utype = String(e && e.utype || "");
     if (!VALID_UTYPES.has(utype)) continue;
-    const tokenId = String((e && e.tokenId) || "");
+    /* 🧪🪞 SMĖLDĖŽĖ: lokaliai (F9_SANDBOX_DECK=1) tikras tokenId pakeičiamas veidrodiniu (+50000),
+     * kad natūralus mūšis galėtų realiai numarinti unitą nepaliesdamas tikro NFT. Prod'e — no-op. */
+    const tokenId = sandboxToken(String((e && e.tokenId) || ""));
     if (tokenId) { if (seenTok.has(tokenId)) continue; seenTok.add(tokenId); }   // dublis su tokenId → praleidžiam (be-tokenId fake/default praeina)
     out.push({
       utype,
@@ -494,12 +543,26 @@ export class F9PvpRoom extends Room<F9State> {
   //   Miręs unitas NIEKADA nebespawn'ina (deck/AI/deploy filtrai) — vienintelis kelias = naujo minto treniravimas
   //   (RONKE sink per esamą Barracks kontraktą). F12 kamuoliukų burn pipeline ATSKIRAS — neliečiamas.
   private _dead = new Map<string, Set<string>>();
-  private _deadSet(addr: string): Set<string> {
+  // Tik ŠIO adreso mirtys — naudoti TIK persist'ui į `<addr>.deadUnits` (kad ten nepatektų svetimi).
+  private _deadOwn(addr: string): Set<string> {
     return this._dead.get((addr || "").trim().toLowerCase()) || new Set();
+  }
+  /* 💀🌍 „Ar šis tokenas nebegali žaisti" (2026-08-21, user: „kad nebūtų jokių išsisukinėjimo atvejų
+   * nuo mirties pabėgti"). `has` tikrina IR globalų registrą: kartą miręs tokenId miręs VISIEMS —
+   * pardavus/perdavus NFT kitam adresui jis NEATGYJA. Iteracija ir `size` lieka tik savi. */
+  private _deadSet(addr: string): Set<string> {
+    const own = this._deadOwn(addr);
+    const g = deadAll();
+    const view = new Set<string>(own);
+    (view as any).has = (t: any) => { const s = String(t); return own.has(s) || g.has(s); };
+    return view;
   }
   private _recordDeath(addr: string, tokenId: string, utype?: string, level?: number) {
     addr = (addr || "").trim().toLowerCase();
     if (!addr || !tokenId || /^dev/i.test(tokenId)) return;
+    /* 💀🛡 Antras saugiklio sluoksnis: net jei kas nors ateity iškvies _recordDeath aplenkdamas
+     * _rollInjury, lokalus procesas su tikra DB TIKRO NFT nenumarins (žr. DeathGuard.ts). */
+    if (deathProtected(tokenId)) { console.warn(deathGuardNote(tokenId)); return; }
     let d = this._dead.get(addr);
     if (!d) { d = new Set(); this._dead.set(addr, d); }
     if (d.has(tokenId)) return;
@@ -515,7 +578,49 @@ export class F9PvpRoom extends Room<F9State> {
       this._persistCem(addr);
     }
     this._persistInjured(addr);   // persist'ina IR deadUnits (žr. _persistInjured)
-    console.log(`[F9PvpRoom] 💀 PERMADEATH ${tokenId} (${addr.slice(0, 10)}…) — įrašyta į deadUnits${c && level != null ? ", cem bazė nurašyta" : ""}`);
+    /* 💀🌍 GLOBALUS registras (2026-08-21, user: „kad nebūtų jokių išsisukinėjimo atvejų nuo mirties
+     * pabėgti"). Adresinis `deadUnits` mirtį rišo prie PINIGINĖS — pardavus NFT unitas atgydavo.
+     * Registras riša prie TOKENO: miręs tokenId nebegrįžta į žaidimą niekam. In-memory galioja iškart,
+     * DB įrašas kartojamas, jei nepavyko (žr. deadFlushPending). */
+    void deadAdd([tokenId]);
+    /* 🔥 TIKRA MIRTIS (2026-08-21, user: „tokiu pat principu kaip ir ball žaidime"): NFT sudeginamas
+     * grandinėje iš anksto pasirašyta autorizacija. Fire-and-forget — mūšio ciklo nestabdom, o
+     * nepavykus deginimui parašas grąžinamas į baseiną ir mirtis vis tiek lieka užfiksuota žaidime. */
+    this._burnEnqueue(addr, tokenId);
+    console.log(`[F9PvpRoom] 💀 PERMADEATH ${tokenId} (${addr.slice(0, 10)}…) — įrašyta į deadUnits${burnEnabled() ? ", NFT deginamas" : " (deginimas nesukonfigūruotas)"}${c && level != null ? ", cem bazė nurašyta" : ""}`);
+  }
+  /* 🔥 DEGINIMO EILĖ — vieno mūšio aukos sudeginamos VIENU parašu (kontraktas priima tokenų masyvą).
+   * Trumpas 2.5s langas suriša kelias to paties susirėmimo mirtis; be jo 3 žuvę unitai suvalgytų
+   * 3 parašus. Eilė ištuštinama ir mačui pasibaigus bei kambariui užsidarant — mirtis nelaukia. */
+  private _burnQ = new Map<string, Set<string>>();
+  private _burnT: any = null;
+  private _burnEnqueue(addr: string, tokenId: string) {
+    if (!burnEnabled()) return;
+    const a = (addr || "").trim().toLowerCase();
+    if (!a || !tokenId || /^dev/i.test(String(tokenId))) return;
+    let s = this._burnQ.get(a);
+    if (!s) { s = new Set(); this._burnQ.set(a, s); }
+    s.add(String(tokenId));
+    if (this._burnT) return;
+    this._burnT = setTimeout(() => { this._burnT = null; void this._burnFlush(); }, BURN_BATCH_MS);
+  }
+  private async _burnFlush(): Promise<void> {
+    if (this._burnT) { clearTimeout(this._burnT); this._burnT = null; }
+    const jobs = Array.from(this._burnQ.entries()).filter(([, s]) => s.size);
+    this._burnQ.clear();
+    for (const [addr, set] of jobs) {
+      const ids = Array.from(set);
+      try {
+        const res = await burnDeadUnits(addr, ids);
+        if (!res.burned.length) continue;
+        // savininkui (jei prisijungęs) — patvirtinimas su tx, kad mirtis matoma ir grandinėje
+        for (const c2 of this.clients) {
+          const pp = this.state.players.get(c2.sessionId);
+          if (!pp || String(pp.address || "").trim().toLowerCase() !== addr) continue;
+          for (const t of res.burned) { try { c2.send("unit_burned", { tokenId: t, utype: "", txHash: res.txHash || "" }); } catch (_) {} }
+        }
+      } catch (_) {}
+    }
   }
   private _hospLoaded = new Set<string>();   // 🛡 S-M5: adresai, kurių buildings SĖKMINGAI užkrauti (persist leidžiamas tik jiems)
   private _injured = new Map<string, { q: InjuredUnit[]; starts: number[]; durs: number[]; lvl: number }>();   // 🏥 ligoninė v3.1 (per-lovą trukmės):
@@ -593,19 +698,31 @@ export class F9PvpRoom extends Room<F9State> {
   private _raidAtkAddr = "";                   // puoliko adresas (live: raider join; async: pirmas team!=DEF)
   private _raidKilled = new Set<string>();     // gynėjo tokenId žuvę per ŠĮ raidą
   private _raidInjured = new Set<string>();    // gynėjo tokenId sužaloti per ŠĮ raidą
-  private _battleFates = new Map<string, "injured" | "dead">();   // ⚔ ŠIO mūšio per-unitId likimai (2-pusiam settled ekranui: abiejų komandų sudėtis)
+  /* ⚔ ŠIO mūšio per-unitId likimai (2-pusiam settled ekranui: abiejų komandų sudėtis).
+   * 🏃 `escaped` (2026-08-23): dezertyravus lauke likę NENUBAUSTI unitai. Anksčiau jie negaudavo
+   * JOKIO likimo, o `_battleRoster` numatytoji reikšmė buvo „dead" ⇒ ataskaita rodė raudoną
+   * „DEAD · Units killed" unitams, kuriems nieko neatsitiko (žr. match_Mj4IjyRdf: 4 „mirę",
+   * bet nei `deadUnits`, nei ligoninėj jų nėra). Dabar likimas fiksuojamas VISIEMS. */
+  private _battleFates = new Map<string, "injured" | "dead" | "escaped">();
   /* 🪽 apsaugoti unitai (addr → tokenId aibė). Sinchroniškai skaitomi mūšio cikle, DB — fone. */
   private _shield = new Map<string, Set<string>>();
   private _shieldSeen = new Map<string, Set<string>>();   // kurie apsaugoti unitai TIKRAI buvo lauke šį mačą
   private _raidStolen = 0;                      // pavogti kaulai (užpildoma _endMatch grobio bloke)
   private _endBones = { atk: 0, def: 0 };       // 🦴 abiejų pusių sesijos kaulai (_endMatch summary; _persistRaidReport skaito PO flush'o)
   private _minePend = new Map<string, { nonce: string; amt: number; at: number }>();   // ⛏️💸 laukiantis withdrawal (deduct'inta; jei TX nenusėda po deadline → re-credit)
+  /* 🪖 08-23: kiek pastiprinimų REALIAI įėjo į mūšį. Eilės dydis netiko — jis matuojamas per anksti:
+   * į HOME kambarį puolikas ateina JAU PO `_startMatch`, tad jo skaičius visada būdavo 0.
+   * Šis skaitliukas atsako tiesiai: 0 gynėjo pusėje = rezervas neįėjo. */
+  private _matchReinf = { atk: 0, def: 0 };
   private _raidReported = false;               // vieną kartą per kambarį
 
   onCreate(options: any) {
     this.setState(new F9State());
     this.state.seed = Math.floor(Math.random() * 1_000_000_000);
     this.state.phase = "lobby";
+    /* 💀🌍 Globalus mirusių registras — užkraunam iškart, kad pirmas prisijungęs jau būtų filtruojamas,
+     * ir čia pat pabandom pabaigti tai, ko ankstesnis procesas neįrašė į DB. */
+    void deadEnsure().then(() => deadFlushPending()).catch(() => {});
     this._combatEnabled = options?.combat !== false;       // default ON; testai gali siųsti combat:false
     this._relay = options?.relay === true;                  // C3: host-authority relay režimas (#f9live)
     this._home = options?.home === true;                    // 🏰 HOME: solo namų pilis (opt-in; 1v1 nepaliestas)
@@ -649,6 +766,7 @@ export class F9PvpRoom extends Room<F9State> {
     // 🏗️ HOME: sienos/bokštų upgrade per pilies panelę. Tik savininkas, tik ramus home (be raiderio).
     this.onMessage("upgrade_wall", (client) => this._handleUpgradeWall(client));
     this.onMessage("upgrade_hospital", (client) => this._handleUpgradeHospital(client));
+    this.onMessage("upgrade_blessgen", (client) => this._handleUpgradeBlessGen(client));   // ⚡🏭 BLESS generatorius už kaulus
     // 🛡 SKYDO NUĖMIMAS — TIK pilies SAVININKAS savo namuose (nori būti puolamas anksčiau nei 1h).
     this.onMessage("shield_remove", async (client) => {
       if (!this._home || client.sessionId !== this._ownerSid || !this._ownerAddr) return;
@@ -660,6 +778,53 @@ export class F9PvpRoom extends Room<F9State> {
       } catch (_) {}
     });
     // 🏥 LIGONINĖ — klientas prašo savo eilės (namuko UI panelei)
+    /* 🔥📜 BURN AUTORIZACIJOS (2026-08-21) — „tokiu pat principu kaip ball žaidime".
+     * Klientas klausia, kiek parašų turi ir kokius slot'us pasirašyti; tada atsiunčia pasirašytus.
+     * Parašai imami IŠ ANKSTO, nes raidas ateina, kai gynėjas miega — tada jo parašo gauti nebūtų kaip. */
+    this.onMessage("burn_auth_state", async (client) => {
+      const p = this.state.players.get(client.sessionId);
+      const addr = String(p?.address || "").trim().toLowerCase();
+      if (!addr) return;
+      try {
+        const have = await burnAuthCount(addr);
+        const need = Math.max(0, BURN_AUTH_TARGET - have);
+        // slot'ai: battleId/nonce — atsitiktiniai uint256; deadline — BURN_AUTH_DAYS parų
+        const deadline = Math.floor(Date.now() / 1000) + BURN_AUTH_DAYS * 86400;
+        const rnd = () => {
+          let s = "";
+          for (let i = 0; i < 8; i++) s += Math.floor(Math.random() * 1e9).toString();
+          return s.slice(0, 60).replace(/^0+/, "") || "1";
+        };
+        const slots = Array.from({ length: need }, () => ({ battleId: rnd(), nonce: rnd(), deadline }));
+        /* 🔑 tokenId sąrašą duoda SERVERIS, ne klientas: parašas galioja tik tiems tokenams, kurie jame
+         * išvardyti, tad jei klientas praleistų kad ir vieną — to unito mirties momentu tinkamo parašo
+         * nebūtų ir NFT nesudegtų. Imam visą deką (laukas + rezervas). */
+        client.send("burn_auth_state", { have, need, slots, tokens: this._burnTokens(client.sessionId), enabled: burnEnabled(), days: BURN_AUTH_DAYS, deathPct: DEATH_PCT });
+      } catch (_) { try { client.send("burn_auth_state", { have: 0, need: 0, slots: [], tokens: [], enabled: burnEnabled(), deathPct: DEATH_PCT }); } catch (_2) {} }
+    });
+    this.onMessage("burn_auth_put", async (client, m: any) => {
+      const p = this.state.players.get(client.sessionId);
+      const addr = String(p?.address || "").trim().toLowerCase();
+      if (!addr) return;
+      try {
+        /* burnAuthAdd grąžina 0, kai nieko naujo neįrašė (brokuotas parašas / dublis). Tada tikrą kiekį
+         * pasiimam atskirai — kitaip UI parodytų „0 signed" ir prašytų pasirašyti jau turimus iš naujo. */
+        const before = await burnAuthCount(addr);
+        let n = await burnAuthAdd(addr, Array.isArray(m?.auths) ? m.auths : []);
+        if (!n) n = await burnAuthCount(addr);
+        client.send("burn_auth_state", { have: n, need: Math.max(0, BURN_AUTH_TARGET - n), slots: [], tokens: this._burnTokens(client.sessionId), enabled: burnEnabled(), saved: true, added: Math.max(0, n - before), deathPct: DEATH_PCT });
+      } catch (_) {}
+    });
+    /* 💀🛒 „Ar šie tokenai mirę?" — marketui. Nesudegintas, bet pilyje žuvęs NFT fiziškai tebėra
+     * grandinėje ir jį galima būtų parduoti nieko neįtariančiam pirkėjui. Klientas šito klausia
+     * prieš rodydamas listingus ir tokius pažymi 💀 bei neleidžia pirkti. */
+    this.onMessage("dead_check", async (client, m: any) => {
+      const ids = (Array.isArray(m?.tokenIds) ? m.tokenIds : []).map((t: any) => String(t || "")).filter(Boolean).slice(0, 300);
+      if (!ids.length) return;
+      try { await deadEnsure(); } catch (_) {}
+      const g = deadAll();
+      try { client.send("dead_check", { dead: ids.filter((t: string) => g.has(t)) }); } catch (_) {}
+    });
     this.onMessage("hospital_get", async (client) => {
       const p = this.state.players.get(client.sessionId);
       const addr = String(p?.address || "").trim().toLowerCase();
@@ -681,7 +846,8 @@ export class F9PvpRoom extends Room<F9State> {
         // 🏆 emisija pagal RONKE SCORE pakopą; nėra pakopos (žemiau top 50% / API tyli) → nėra ko claim'inti,
         //    IR nieko neįrašom ⇒ para neprarandama, pavyks kai score atsiras/API atsakys.
         const t = await scoreTierNow(addr);
-        if (blessClaimCap(t.pct) < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_score" }); } catch (_) {} return; }
+        const gen = await blessGenLevelOf(addr);   // ⚡🏭 nupirktas generatorius duoda emisiją ir be Score pakopos
+        if (blessClaimCap(t.pct, gen) < 1) { try { client.send("bless_claimed", { ok: false, reason: "no_score" }); } catch (_) {} return; }
         // 🪖 vartai: ≥12 unitų piniginėje. RPC neatsakius NEleidžiam (fail-closed), bet ir nieko nenurašom.
         const _cc = await chainCounts(addr);
         if (!_cc) { try { client.send("bless_claimed", { ok: false, reason: "units_unknown" }); } catch (_) {} return; }
@@ -689,7 +855,7 @@ export class F9PvpRoom extends Room<F9State> {
           try { client.send("bless_claimed", { ok: false, reason: "need_units", units: _cc.wallet, minUnits: BLESS_MIN_UNITS }); } catch (_) {}
           return;
         }
-        const res = await blessClaim(addr, t.pct);
+        const res = await blessClaim(addr, t.pct, gen);
         const insta = await blessInsta(addr);
         try { client.send("bless_claimed", { ok: res.ok, credited: res.credited, insta, reason: res.ok ? undefined : "nothing_to_claim" }); } catch (_) {}
         if (res.ok) console.log(`[F9PvpRoom] ⚡🎒 BLESS claim +${res.credited} → bal ${res.bal} (${addr.slice(0, 10)}…)`);
@@ -1268,8 +1434,9 @@ export class F9PvpRoom extends Room<F9State> {
       if (_sa && !this._shield.has(_sa)) this._shield.set(_sa, new Set(await shieldList(_sa)));
     } catch (_) {}
     // 💀 PERMADEATH filtras: mirę NFT išmetami iš deko VISAM (cem power/nft skaičiuojasi be jų)
+    try { await deadEnsure(); } catch (_) {}   // 💀🌍 šviežias globalus registras PRIEŠ filtrą
     const _deadJ = this._deadSet(String(p.address || ""));
-    if (_deadJ.size) {
+    {   // filtruojam VISADA (be `size` trumpinimo): tokenas gali būti miręs globaliai, o ne šiam adresui
       const b4 = _joinDeck.length;
       _joinDeck = _joinDeck.filter((e) => !e.tokenId || !_deadJ.has(e.tokenId));
       if (_joinDeck.length !== b4) console.log(`[F9PvpRoom] 💀 ${b4 - _joinDeck.length} mirę unitai pašalinti iš deko (${String(p.address).slice(0, 10)}…)`);
@@ -1360,11 +1527,24 @@ export class F9PvpRoom extends Room<F9State> {
       this._buildings = { wallLevel: 1, towerLevel: 1, towers: [] };
       if (this._ownerAddr) { try { const bb = await loadBaseBuildings(this._ownerAddr); if (bb) { this._buildings = bb; await this._bakSyncHeal(this._ownerAddr); } } catch (_) {} }   // 🏗️ tikri owner lygiai (+ savigyda iš kopijos)
       if (this._ownerAddr) {
+        try { await deadEnsure(); } catch (_) {}   // 💀🌍 kad į gynybą nepatektų anksčiau žuvęs tokenas
         try {
           this._restoreUnits = await loadBaseUnits(this._ownerAddr);
           this._restoreUnits = await this._chainFilterSnap(this._ownerAddr, this._restoreUnits);   // 🔐 ginа TIK registruoti
         } catch (_) { this._restoreUnits = null; }
         try { await this._loadInjured(this._ownerAddr); } catch (_) {}   // 🏥 sužaloti gynėjai negins
+        /* 🪖 REZERVO ŠALTINIS (2026-08-23, user: „ginuosi — rezervo nėra, nors dekas 30").
+         * `_spawnAiDefenders` eilę sudaro iš snapshot'o likučio + `chainStatsCached(owner)`, o tai
+         * SINCHRONINIS kešas: nepavykus on-chain skaitymui jis grąžina null ⇒ eilė TUŠČIA. Snapshot'e
+         * paprastai guli tik 12 (tiek telpa lauke) ⇒ likučio irgi nėra ⇒ gynėjas kaunasi be pastiprinimų.
+         * `_chainFilterSnap` kešą pašildo TIK kai snapshot'as netuščias ir RPC pavyko, tad tuo remtis negalima.
+         * Todėl deką užkraunam ČIA, atskirai ir su await — po šito `chainStatsCached` jau turi duomenis. */
+        try { await chainDeck(this._ownerAddr); } catch (_) {}
+        /* 🪽 08-21 KRITINĖ: skydai anksčiau būdavo užkraunami TIK prisijungusiam žaidėjui (onJoin).
+         * Async raide gynėjas neprisijungia ⇒ `_shield` jam tuščias ⇒ `_rollInjury` skydo nerastų ir
+         * apsaugotas unitas MIRTŲ, nors BLESS uždėtas. Su įjungta 10% mirtimi tai būtų tiesioginis
+         * žaidėjo turto praradimas, todėl gynėjo skydus kraunam ir čia. */
+        try { if (!this._shield.has(this._ownerAddr)) this._shield.set(this._ownerAddr, new Set(await shieldList(this._ownerAddr))); } catch (_) {}
         try { await this._loadCem(this._ownerAddr); this._cemAccrue(this._ownerAddr); } catch (_) {}   // ⚰️ grobiui
       }
       // 🛡 DUTY: SAFE režimo pilis NEPUOLAMA (žaidėjas pasirinko saugumą už lėtesnį kasimą).
@@ -1450,12 +1630,30 @@ export class F9PvpRoom extends Room<F9State> {
       p.team = DEFENDER_TEAM;
       this._ownerSid = client.sessionId;
       let _re = 0;
+      const _prevOwners = new Set<string>();   // 🪖 iš KO perėmėm — pagal tuos raktus gulės ir rezervo eilė
       this.state.units.forEach((u) => {
         // 🧷 07-15 (g3nka repro: „savo unitai pažymėti kaip priešai, nevaldomi“): + TO PATIES ADRESO dar-GYVA
         //   sena sesija (2 tab'ai / reload'o lenktynės su senu socket'u) — NAUJAUSIAS tab'as perima valdymą.
         const _oldSame = this.state.players.has(u.owner) && String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase() === this._ownerAddr;
-        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === AI_DEF_OWNER || !this.state.players.has(u.owner) || _oldSame)) { u.owner = client.sessionId; _re++; }
+        if (u.team === DEFENDER_TEAM && u.owner !== client.sessionId && (_removedGhostSids.includes(u.owner) || u.owner === AI_DEF_OWNER || !this.state.players.has(u.owner) || _oldSame)) { _prevOwners.add(u.owner); u.owner = client.sessionId; _re++; }
       });
+      /* 🪖 REZERVAS KELIAUJA PASKUI UNITUS (2026-08-23, user: „kai puolu — rezervas pasirodo, kai ginuosi — ne").
+       * Perimant gynybą unitai gauna NAUJĄ owner sid, o `_tryReinforce` eilės ieško būtent pagal `fallen.owner`.
+       * Jei eilė lieka po SENU raktu (AI_DEF_OWNER arba ghost/reconnect'o sid), ji tampa nepasiekiama ir
+       * pastiprinimai TYLIAI dingsta — bet TIK ginantis (puolant sid nesikeičia, todėl ten veikė).
+       * 08-21 rezervo fix'as (39be7be7) uždengė ASYNC perėmimą (žr. aukščiau), o šitas HOME kelias liko. */
+      if (!(this._reserves.get(client.sessionId) || []).length) {
+        for (const _sid of [AI_DEF_OWNER, ..._prevOwners]) {
+          const _pool = this._reserves.get(_sid);
+          if (_pool && _pool.length) {
+            this._reserves.set(client.sessionId, _pool);
+            console.log(`[F9PvpRoom] 🪖 rezervas (${_pool.length}) perduotas gynėjui iš ${_sid === AI_DEF_OWNER ? "AI" : _sid.slice(0, 8) + "…"}`);
+            break;
+          }
+        }
+      }
+      for (const _sid of _prevOwners) if (_sid !== client.sessionId) this._reserves.delete(_sid);
+      this._reserves.delete(AI_DEF_OWNER);
       const _cl = client;
       setTimeout(() => {
         try {
@@ -1599,6 +1797,7 @@ export class F9PvpRoom extends Room<F9State> {
 
   private _hospTimer: any = null;   // 🏥 periodinis eilės tikrinimas (pasveikimai gyvame kambaryje)
   async onDispose() {
+    try { await this._burnFlush(); } catch (_) {}   // 🔥 kambariui užsidarant nepaliekam nesudegintų
     if (this._hospTimer) { clearInterval(this._hospTimer); this._hospTimer = null; }
     if (this._idleTimer) { clearInterval(this._idleTimer); this._idleTimer = null; }
     if (this._readyTimer) clearTimeout(this._readyTimer);
@@ -1668,6 +1867,7 @@ export class F9PvpRoom extends Room<F9State> {
     for (const p of this.state.players.values()) this._spawnSquadFor(p);
     // 🤖 ASYNC raid: taikinys offline → spawninam AI gynėjus iš snapshot'o (TOSE PAČIOSE pozicijose, kur paliko).
     if (this._asyncRaid && this._restoreUnits && this._restoreUnits.length) this._spawnAiDefenders(this._restoreUnits);
+    this._matchReinf = { atk: 0, def: 0 };   // 🪖 naujas mūšis → skaitliukai iš naujo
     // 🏰 Castle siena — sukuriam segmentus (server-authoritative kolizija + HP + siege).
     this._walls = [];
     this.state.walls.clear();
@@ -1791,6 +1991,7 @@ export class F9PvpRoom extends Room<F9State> {
     }
     const sp = FFA_SPAWNS[p.team % FFA_SPAWNS.length];
     this._spawnOneUnit(p, entry, sp.x, sp.y);          // pastiprinimas ateina prie savo bazės krašto
+    if (p.team === DEFENDER_TEAM) this._matchReinf.def++; else this._matchReinf.atk++;   // 🪖 diagnostikai
     this.broadcast("reinforce", { owner: fallen.owner, team: p.team, left: pool.length });
   }
 
@@ -1828,6 +2029,7 @@ export class F9PvpRoom extends Room<F9State> {
     u.cmd = "idle";
     this.state.units.set(u.id, u);
     this._ai.set(u.id, { order: "hold", lastAtk: 0, engageId: "", kills: 0 });
+    this._matchReinf.def++;   // 🪖 diagnostikai (AI ginama pilis — tas pats gynėjo skaitliukas)
     this.broadcast("reinforce", { owner: AI_DEF_OWNER, team: DEFENDER_TEAM, left: pool.length });
     console.log(`[F9PvpRoom] 🪖🤖 gynėjo pastiprinimas: ${entry.utype} lv${entry.level} (#${entry.tokenId}) — rezerve liko ${pool.length}`);
   }
@@ -1918,6 +2120,19 @@ export class F9PvpRoom extends Room<F9State> {
     }
     return recovered;
   }
+  /* 🔥📜 Kokius tokenId'us turi apimti burn autorizacija: VISĄ žaidėjo deką (laukas + rezervas), nes
+   * mirti gali bet kuris iš jų, o parašas galioja tik jame išvardytiems. Dev/testiniai praleidžiami. */
+  private _burnTokens(sessionId: string): string[] {
+    const deck = this._decks.get(sessionId) || [];
+    const ids = deck.map((e) => String(e.tokenId || "")).filter((t) => t && !/^dev/i.test(t));
+    // + kas DABAR stovi lauke (jei kas nors pateko į mūšį ne per deką)
+    this.state.units.forEach((u) => {
+      if (u.owner !== sessionId) return;
+      const t = String(u.tokenId || "");
+      if (t && !/^dev/i.test(t) && !ids.includes(t)) ids.push(t);
+    });
+    return ids.slice(0, 64);
+  }
   // Kliento payload: eilė su prognozuojamu pasveikimo laiku (galva tiksli, kiti — jei eilė nesikeis).
   private _hospPayload(addr: string) {
     addr = (addr || "").trim().toLowerCase();
@@ -1962,7 +2177,9 @@ export class F9PvpRoom extends Room<F9State> {
     //   Klientas rodo Bless mygtuką tik kai true → nebėra „paspaudžiau per siege, nepagijo" (07-12 user).
     const instaReady = this._home && addr === this._ownerAddr && this.state.players.size <= 1;
     // 🪽 shield = tokenId sąrašas, ant kurių uždėtas BLESS (kortelių ženkliukams)
-    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady, shield: [...(this._shield.get(addr) || [])] };
+    /* 💀 deathPct — REALI mirties tikimybė (0 = taisyklė išjungta). Klientas privalo ją žinoti: kitaip
+     * DEATH SHIELD siūlytų pirkti apsaugą nuo rizikos, kurios tuo metu išvis nėra. */
+    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady, shield: [...(this._shield.get(addr) || [])], deathPct: DEATH_PCT, burnOn: burnEnabled() };
   }
 
   // ⚔️ DEPLOY (07-04 user mechanika): paruošti (pasveikę/nespawninti) deko unitai → garnizono 2×6 slotai.
@@ -2048,7 +2265,7 @@ export class F9PvpRoom extends Room<F9State> {
     }
     const h = this._injured.get(addr);
     const q = (h?.q || []).slice(), starts = (h?.starts || []).slice(), durs = (h?.durs || []).slice();
-    const dead = Array.from(this._deadSet(addr));   // snapshot ČIA (eilė vykdys vėliau)
+    const dead = Array.from(this._deadOwn(addr));   // snapshot ČIA (eilė vykdys vėliau) — TIK savi (globalūs guli registre)
     void this._buildingsOp(addr, (b) => {
       b.injured = q;
       b.hospStart = starts[0] || 0;   // legacy laukas (seni klientai/migracija)
@@ -2085,6 +2302,7 @@ export class F9PvpRoom extends Room<F9State> {
     const wallLevel = this._buildings.wallLevel || 1, towerLevel = this._buildings.towerLevel || 1;
     const towers = (this._buildings.towers || []).map((t) => ({ y: t.y, level: t.level }));
     const hospLevel = this._buildings.hospLevel || 1;
+    const blessGenLevel = this._buildings.blessGenLevel || 0;   // ⚡🏭 pirktas už kaulus → tas pats monotoniškas kelias
     void this._buildingsOp(addr, (b) => {
       /* 🛡 08-20 MONOTONIŠKUMO SARGAS: žaidime statiniai TIK auga (downgrade'o nėra, bokštai negriaunami
        * visam laikui). Todėl niekada neperrašom DB reikšmės ŽEMESNE — jei kambario `_buildings` liko
@@ -2092,6 +2310,7 @@ export class F9PvpRoom extends Room<F9State> {
       b.wallLevel = Math.max(Number(b.wallLevel) || 1, wallLevel);
       b.towerLevel = Math.max(Number(b.towerLevel) || 1, towerLevel);
       b.hospLevel = Math.max(Number(b.hospLevel) || 1, hospLevel);
+      b.blessGenLevel = Math.max(Number(b.blessGenLevel) || 0, blessGenLevel);
       if (towers.length >= ((b.towers || []).length)) b.towers = towers;   // bokštų tik daugėja
       void bakRecord(addr, b);   // 🏰💾 kas nupirkta už kaulus — iškart į atsarginę kopiją
     });
@@ -2119,9 +2338,9 @@ export class F9PvpRoom extends Room<F9State> {
     } catch (_) { try { client.send("upgrade_fail", { reason: "save", cost, what }); } catch (_) {} return false; }
   }
   // Kritusio NFT unito likimas: 90% → ligoninės eilės GALAS, 10% → tikra mirtis.
-  private _rollInjury(addr: string, u: F9Unit): { fate: "injured" | "dead"; eta: number; queuePos: number; saved?: boolean } {
+  private _rollInjury(addr: string, u: F9Unit): { fate: "injured" | "dead"; eta: number; queuePos: number; saved?: boolean; guarded?: boolean } {
     addr = (addr || "").trim().toLowerCase();
-    let _saved = false;
+    let _saved = false, _guarded = false;
     if (Math.random() >= INJURY_CHANCE) {
       /* 🪽 BLESS SKYDAS (2026-08-19, user): jei ant unito uždėtas BLESS — vietoj MIRTIES jis
        * keliauja į ligoninę. Skydas nuimamas iškart (vienam kartui), o pats itemas ir taip sudegs
@@ -2131,7 +2350,12 @@ export class F9PvpRoom extends Room<F9State> {
         set.delete(u.tokenId);
         void shieldBurn(addr, [u.tokenId]);
         _saved = true;
-        console.log(`[F9PvpRoom] 🪽 BLESS IŠGELBĖJO ${u.utype}#${u.tokenId} (${addr.slice(0, 10)}…) — vietoj mirties į ligoninę`);
+        console.log(`[F9PvpRoom] 🪽 BLESS IŠGELBĖJO ${u.utype}#${u.tokenId} (${addr.slice(0, 10)}…) — mirtis (${DEATH_PCT}%) jam neveikia, keliauja į ligoninę; skydas sudegė`);
+      } else if (deathProtected(u.tokenId)) {
+        /* 💀🛡 SAUGIKLIS (2026-08-21, po incidento su tokenu 4863): lokalus serveris, prijungtas prie
+         * tikros DB, negali negrįžtamai numarinti TIKRO NFT. Unitas krenta į ligoninę kaip įprastai. */
+        _guarded = true;
+        console.warn(deathGuardNote(u.tokenId));
       } else {
         this._recordDeath(addr, u.tokenId, u.utype, u.level || 0);
         return { fate: "dead", eta: 0, queuePos: -1 };
@@ -2147,7 +2371,7 @@ export class F9PvpRoom extends Room<F9State> {
     this._persistInjured(addr);
     const pos = h.q.findIndex((i) => i.tokenId === u.tokenId);
     const _etas = this._hospEtas(h);
-    return { fate: "injured", eta: (_etas[pos] && _etas[pos].eta) || Date.now() + this._hospHealMs(h.lvl), queuePos: pos, saved: _saved };
+    return { fate: "injured", eta: (_etas[pos] && _etas[pos].eta) || Date.now() + this._hospHealMs(h.lvl), queuePos: pos, saved: _saved, guarded: _guarded };
   }
 
   // ── ⚰️ KAPINĖS — pasyvi kaulų generacija ─────────────────────────────────
@@ -2436,27 +2660,44 @@ export class F9PvpRoom extends Room<F9State> {
     addr = (addr || "").trim().toLowerCase();
     const c = this._cem.get(addr);
     if (!c) return;
+    /* 🐛💰 DVIGUBO UŽSKAITYMO FIX (2026-08-22) — regresija iš 52e1e142/eebb5fdf (08-20).
+     * BUVO: delta skaičiuota callback'e nuo `snap.mpotSync`, o `snap` daromas SINCHRONIŠKAI, kai
+     * callback'as vykdomas tik PO DB round-trip'o. Pilies atidarymas kviečia _persistCem DUKART tame
+     * pačiame sinchroniniame bloke (onJoin :1471 ir :1491, tarp jų sinchroniškas _startMatch, jokio
+     * await) ⇒ abu snapshot'ai nešė TĄ PAČIĄ seną bazę S. Pirmas įrašė S+G, antras tą patį G perskaitė
+     * kaip „external" ir pridėjo dar kartą → S+2G. Offline iškastas kiekis užsiskaitydavo 2× KAS
+     * pilies atidarymą (emisija 4,9k → 12,9k per parą; DB liko neįmanoma būsena safe+mineMined=600).
+     * DABAR: deltą pasiimam ir „suvartojam" SINCHRONIŠKAI — dar prieš dedant į eilę. Antras to paties
+     * tiko kvietimas gauna deltą 0, o svetimas grobis (dėl ko 08-20 fix'as ir darytas) vis tiek
+     * pridedamas, nes rašom `dbPot + delta`, o ne aklą savo reikšmę. */
+    const _pSync = Number.isFinite(+(c.mpotSync as any)) ? +(c.mpotSync as any) : (c.mpot || 0);
+    const dPot = Math.round(((c.mpot || 0) - _pSync) * 1000) / 1000;
+    c.mpotSync = c.mpot || 0;                       // suvartota — kitas kvietimas šito nebepridės
+    const _mSync = Number.isFinite(+(c.msync as any)) ? +(c.msync as any) : (c.mmined || 0);
+    const dMined = Math.round(((c.mmined || 0) - _mSync) * 1000) / 1000;
+    c.msync = c.mmined || 0;
     const snap = { ...c };
     void this._buildingsOp(addr, (b) => {
       /* ⛏️💰 LOST-UPDATE FIX (2026-08-20, user: „puola pilį, laimi, bet negauna looto").
        * `minePot` keičia NE tik šis kambarys: raido grobis įrašomas per puoliko #buildings eilę IŠ KITO
-       * kambario. Anksčiau čia buvo aklas `b.minePot = snap.mpot` → savininko namų kambarys, turintis
-       * senesnę reikšmę atmintyje, TIESIOG UŽTRINDAVO ką tik gautą grobį (arba gynėjui grąžindavo
-       * pavogtą sumą). Dabar rašom DELTĄ: kiek pridėjo/atėmė kitas kambarys — tiek ir pritaikom. */
+       * kambario. Aklas `b.minePot = snap.mpot` užtrindavo ką tik gautą grobį. Todėl rašom savo DELTĄ
+       * ant DABARTINĖS DB reikšmės — svetimi pokyčiai išlieka savaime. */
       const dbPot = Number.isFinite(+((b as any).minePot)) ? Math.max(0, +((b as any).minePot)) : 0;
-      const base = Number.isFinite(+(snap as any).mpotSync) ? +(snap as any).mpotSync! : dbPot;
-      const external = dbPot - base;   // >0 = grobis atėjo · <0 = kažkas nurašė (pvz. mus apiplėšė)
-      const merged = Math.max(0, Math.min(MINE_CAP, Math.round((snap.mpot + external) * 1000) / 1000));
+      const merged = Math.max(0, Math.min(MINE_CAP, Math.round((dbPot + dPot) * 1000) / 1000));
       b.minePot = merged;
-      c.mpot = merged; c.mpotSync = merged;   // kambario atmintis irgi pasiveja (klientas mato tikrą sumą)
-      /* ⛏️🗡 TAS PATS DELTOS principas ciklo skaitliukui: `mineMined` nulinį reikšmę rašo IR raido kambarys
-       * (_advanceSiege po kvalifikuoto PvP). Aklas `b.mineMined = snap.mmined` grąžintų 200 atgal ⇒ mūšis
-       * nieko neduotų. Neigiama delta = kitas kambarys atrakino ciklą — priimam. */
+      /* Gyvos reikšmės NEperrašom aklai: tarp eilės sudarymo ir callback'o _cemAccrue galėjo prikaupti
+       * dar (`localSince`) — aklas `c.mpot = merged` tą prieaugį prarastų (žaidėjas netektų iškasto). */
+      const localSince = Math.max(0, Math.round(((c.mpot || 0) - (c.mpotSync || 0)) * 1000) / 1000);
+      c.mpot = Math.max(0, Math.min(MINE_CAP, Math.round((merged + localSince) * 1000) / 1000));
+      c.mpotSync = merged;
+      /* ⛏️🗡 TAS PATS DELTOS principas ciklo skaitliukui: `mineMined` nulį rašo IR raido kambarys
+       * (_advanceSiege po kvalifikuoto PvP). Neigiama delta = kitas kambarys atrakino ciklą — priimam. */
       const dbMined = Number.isFinite(+((b as any).mineMined)) ? Math.max(0, +((b as any).mineMined)) : (snap.mmined || 0);
-      const mBase = Number.isFinite(+(snap as any).msync) ? +(snap as any).msync! : dbMined;
-      const mMerged = Math.max(0, Math.round(((snap.mmined || 0) + (dbMined - mBase)) * 1000) / 1000);
+      const mMerged = Math.max(0, Math.round((dbMined + dMined) * 1000) / 1000);
       b.mineMined = mMerged;
-      c.mmined = mMerged; c.msync = mMerged;
+      const mLocalSince = Math.max(0, Math.round(((c.mmined || 0) - (c.msync || 0)) * 1000) / 1000);
+      c.mmined = Math.max(0, Math.round((mMerged + mLocalSince) * 1000) / 1000);
+      c.msync = mMerged;
       // 🗡 gated NEBĖRA savarankiška būsena — išvedam iš ciklo (SAFE + iškasta ≥200). Rašom tik senų klientų/ataskaitų labui.
       const _gated = (snap.duty === "safe") && mMerged >= MINE_SIEGE_STEP - 0.01;
       c.gated = _gated;
@@ -2699,6 +2940,29 @@ export class F9PvpRoom extends Room<F9State> {
       console.log(`[F9PvpRoom] 🏥 hospital upgraded → L${next} (-${HOSP_UPG_COST[next] || 0}🦴, slots ${this._hospSlots(next)}, heal ${Math.round(this._hospHealMs(next) / 60000)}min)`);
     } finally { this._upgBusy = false; }
   }
+  /* ⚡🏭 BLESS GENERATORIUS — pirkimas ir upgrade už kaulus (2026-08-22, user).
+   * L1 = 250🦴 → +1 BLESS į paros emisiją; toliau +10🦴 už lygį iki L5 (290🦴) → +5/parą.
+   * Emisijos laikmačio nėra: lygis tiesiog pakelia paros claim lubas (BlessBank.blessClaimCap),
+   * tad galioja ta pati rolling 24h mechanika ir tie patys anti-double-claim saugikliai (CAS).
+   * Statoma savo pilyje ir be raido — kaip ligoninė/bokštai (_upgBusy = anti double-spend). */
+  private async _handleUpgradeBlessGen(client: Client) {
+    if (!this._home || client.sessionId !== this._ownerSid) return;
+    if (this.state.players.size > 1) return;   // vyksta raidas → statybos uždarytos
+    const cur = this._buildings.blessGenLevel || 0;
+    if (cur >= BLESS_GEN_MAX_LVL) { try { client.send("blessgen_upgraded", { level: cur, max: true }); } catch (_) {} return; }
+    if (this._upgBusy) return; this._upgBusy = true;
+    try {
+      const next = cur + 1;
+      if (!(await this._spendBones(client, BLESS_GEN_COST[next] || 0, "Bless Generator L" + next))) return;
+      // pakartotinė patikra PO kaulų nurašymo (kitas klik'as/raidas galėjo įsiterpti kol laukėm banko)
+      if (this.state.players.size > 1 || (this._buildings.blessGenLevel || 0) >= next) return;
+      this._buildings.blessGenLevel = next;
+      this._persistStructures(this._ownerAddr);
+      const _insta = await blessInsta(this._ownerAddr);   // šviežios paros lubos UI'ui (cap jau su nauju lygiu)
+      try { client.send("blessgen_upgraded", { level: next, max: next >= BLESS_GEN_MAX_LVL, nextCost: BLESS_GEN_COST[next + 1] || 0, insta: _insta }); } catch (_) {}
+      console.log(`[F9PvpRoom] ⚡🏭 bless generator → L${next} (-${BLESS_GEN_COST[next] || 0}🦴, +${next} BLESS/parą) ${this._ownerAddr.slice(0, 10)}…`);
+    } finally { this._upgBusy = false; }
+  }
   private async _handleUpgradeTowers(client: Client) {
     if (!this._home || client.sessionId !== this._ownerSid) return;
     if (this.state.players.size > 1) return;
@@ -2764,7 +3028,7 @@ export class F9PvpRoom extends Room<F9State> {
     const _seq = ++this._setSquadSeq;   // 🔒 lenktynių guard'as: spam'inant deko keitimus, taikom TIK naujausią
     let newDeck = this._pureDeck(sanitizeDeck(msg && msg.deck));   // 🎖️ NFT yra → fake unitai išnyksta
     const _deadSq = this._deadSet(p.address);
-    if (_deadSq.size) newDeck = newDeck.filter((e) => !e.tokenId || !_deadSq.has(e.tokenId));   // 💀 mirę nepraeina
+    newDeck = newDeck.filter((e) => !e.tokenId || !_deadSq.has(e.tokenId));   // 💀 mirę nepraeina (ir globaliai mirę)
     // ♻️ fresh (07-04): klientas KĄ TIK re-registravo deką on-chain → invaliduojam 120s kešą, kad
     //   nauji unitai nepraeitų pro seną snapshot'ą (be šito atsirasdavo tik po restarto). Rate-limit 10s/addr.
     if (msg && msg.fresh && p.address) {
@@ -2861,8 +3125,61 @@ export class F9PvpRoom extends Room<F9State> {
       return;
     }
     // FAZA E: čia mirusiems unitams eis lock/permadeath settlement.
-    this.state.units.forEach((u) => { if (u.owner === sid) u.alive = false; });
+    this._desertPenalty(sid);   // 🏳️💥 PIRMA bausmė (unitai dar alive), TIK TADA nurašom lauką
+    /* 🏃 Likę (bausmės neliesti) unitai nuo lauko nuimami, bet jiems NIEKO neatsitiko — jie tebėra deke.
+     * Pažymim `escaped`, kitaip `_battleRoster` numatytoji reikšmė paskelbtų juos MIRUSIAIS. */
+    this.state.units.forEach((u) => {
+      if (u.owner !== sid) return;
+      if (u.alive && !this._battleFates.has(u.id)) this._battleFates.set(u.id, "escaped");
+      u.alive = false;
+    });
     this._checkWin();
+  }
+
+  /* 🏳️💥 DEZERTYRO BAUSMĖ (2026-08-22, user: „užpuoliau, jis pamatė kad pralaimės ir išjungė žaidimą").
+   * PROBLEMA: dar GYVI pabėgusiojo unitai gaudavo tiesiog `alive=false` BE _rollInjury. Puolikui settled
+   * ekranas rodydavo „LOST", bet gynėjo dekas realiai likdavo NEPALIESTAS → grįžęs iškart kasdavo toliau.
+   * Tai buvo pigiausias būdas išvengti atsakomybės: pralaimi → išjungi → sausas.
+   * DABAR: DESERT_PCT (50%) atsitiktinių dar gyvų NFT unitų praeina TĄ PATĮ kelią kaip kritę mūšyje —
+   * _rollInjury → ligoninė, o kai mirtis įjungta (F9_INJURY_CHANCE=0.9) — ir 10% tikra žūtis. BLESS
+   * skydas bei DeathGuard galioja lygiai taip pat kaip įprastoje kovoje (jokių išimčių dezertyrui).
+   * Likę 50% laikomi „ištrūkusiais" — jiems nieko; bausmė skaudi, bet ne totali.
+   * Taikoma ABIEM pusėm (puolikas, išjungęs žaidimą pralaimint, baudžiamas taip pat). */
+  private _desertPenalty(sid: string) {
+    if (DESERT_PCT <= 0) return;
+    if (!(this._home || this._asyncRaid)) return;   // ligoninė/mirtis veikia tik raiduose — kaip ir kovinis _rollInjury
+    /* 🚨 HOTFIX 2026-08-22: BŪTINA sąlyga — lauke turi būti GYVŲ PRIEŠO unitų, t. y. mūšis TIKRAI vyksta.
+     * Be šito `this._home` buvo true ir tada, kai žaidėjas tiesiog sėdi SAVO pilyje be jokio raido:
+     * uždarius skirtuką (arba telefonui užmigdžius puslapį → seat-reaper) `onLeave` kviesdavo
+     * `_handlePlayerOut`, ir pusė VISIŠKAI nekaltų unitų keliaudavo į ligoninę. Kas kartą, kas išėjimą.
+     * Solo pilyje priešo unitų nėra ⇒ bausmės nėra. Gyvame raide (gynėjas mato puoliką) ir async raide
+     * (puolikas mato AI gynėjus) priešas yra ⇒ dezertyravimas baudžiamas kaip ir turi būti. */
+    const me = this.state.players.get(sid);
+    if (!me) return;
+    let enemyAlive = false;
+    this.state.units.forEach((u) => { if (u.alive && u.team !== me.team) enemyAlive = true; });
+    if (!enemyAlive) return;
+    const addr = String(me.address || "").trim().toLowerCase();
+    if (!addr) return;
+    const alive: F9Unit[] = [];
+    this.state.units.forEach((u) => {
+      if (u.owner === sid && u.alive && u.tokenId && !/^dev/i.test(u.tokenId)) alive.push(u);
+    });
+    if (!alive.length) return;
+    for (let i = alive.length - 1; i > 0; i--) {   // Fisher–Yates: kurie 50% nukenčia — atsitiktinumas, ne eilės tvarka
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = alive[i]; alive[i] = alive[j]; alive[j] = t;
+    }
+    const take = Math.ceil(alive.length * DESERT_PCT);   // ceil → pabėgus su 1 unitu bausmė vis tiek yra
+    for (const u of alive.slice(0, take)) {
+      const res = this._rollInjury(addr, u);
+      this._battleFates.set(u.id, res.fate);
+      if (addr === this._ownerAddr) {   // 📜 gynėjo nuostolis → raido ataskaita (_persistRaidReport)
+        if (res.fate === "dead") this._raidKilled.add(u.tokenId); else this._raidInjured.add(u.tokenId);
+      }
+      console.log(`[F9PvpRoom] 🏳️💥 dezertyras ${u.utype}#${u.tokenId} (${addr.slice(0, 10)}…) → ${res.fate}`);
+    }
+    console.log(`[F9PvpRoom] 🏳️💥 ${addr.slice(0, 10)}… išjungė žaidimą mūšyje → nubausta ${take}/${alive.length} dar gyvų unitų (${Math.round(DESERT_PCT * 100)}%)`);
   }
 
   // FFA win: lieka tik vienas team su gyvais unitais → jis laimi (arba 0 → lygiosios).
@@ -2953,8 +3270,8 @@ export class F9PvpRoom extends Room<F9State> {
     // 🌍 GLOBALI mūšių istorija (07-14 user): atskiras `match_<roomId>` įrašas f9_bases —
     //   raid_ui 📜 HISTORY panelė skaito anon key. Roster'is settled (kviečiama 400ms po _endMatch).
     const roster = this._battleRoster();
-    let atkT: { survived: number; injured: number; dead: number } | null = null;
-    let defT: { survived: number; injured: number; dead: number } | null = null;
+    let atkT: RosterTeam | null = null;
+    let defT: RosterTeam | null = null;
     for (const k of Object.keys(roster)) {
       if (roster[k].team === DEFENDER_TEAM) defT = roster[k]; else if (!atkT) atkT = roster[k];
     }
@@ -2963,6 +3280,8 @@ export class F9PvpRoom extends Room<F9State> {
       winner: atkWon ? "attacker" : "defender", result,
       atkSurvived: atkT ? atkT.survived : 0, atkInjured: atkT ? atkT.injured : 0, atkDead: atkT ? atkT.dead : 0,
       defSurvived: defT ? defT.survived : 0, defInjured: defT ? defT.injured : 0, defDead: defT ? defT.dead : 0,
+      atkEscaped: atkT ? atkT.escaped : 0, defEscaped: defT ? defT.escaped : 0,   // 🏃 pasitraukę be nuostolio (dezertyravus)
+      atkReserve: this._matchReinf.atk, defReserve: this._matchReinf.def,   // 🪖 kiek pastiprinimų realiai įėjo (0 = rezervas nesuveikė)
       atkBones: this._endBones.atk, defBones: this._endBones.def,   // 🦴 kaulų grobis pusėms (kill loot)
       bones: this._raidStolen, durationMs: this.state.startedAt ? Date.now() - this.state.startedAt : 0,
     }).then((ok) => {
@@ -2998,13 +3317,13 @@ export class F9PvpRoom extends Room<F9State> {
       throw new Error("RAID_COOLDOWN:" + Math.ceil((RAID_CD_MS - (Date.now() - cdAt)) / 60000));
     }
   }
-  // ⚔ Abiejų komandų mūšio sudėtis su likimais (survived/injured/dead) — 2-pusiam settled ekranui.
+  // ⚔ Abiejų komandų mūšio sudėtis su likimais (survived/injured/dead/escaped) — 2-pusiam settled ekranui.
   //   Kiekvienas klientas gauna TUOS PAČIUS rosterius (broadcast), o savo/priešo pusę pasirenka pagal savo team.
-  private _battleRoster(): Record<string, { team: number; address: string; units: any[]; survived: number; injured: number; dead: number }> {
-    const teams: Record<string, { team: number; address: string; units: any[]; survived: number; injured: number; dead: number }> = {};
+  private _battleRoster(): Record<string, RosterTeam> {
+    const teams: Record<string, RosterTeam> = {};
     const ensure = (team: number, addr: string) => {
       const k = String(team);
-      if (!teams[k]) teams[k] = { team, address: addr || "", units: [], survived: 0, injured: 0, dead: 0 };
+      if (!teams[k]) teams[k] = { team, address: addr || "", units: [], survived: 0, injured: 0, dead: 0, escaped: 0 };
       else if (!teams[k].address && addr) teams[k].address = addr;
       return teams[k];
     };
@@ -3012,14 +3331,23 @@ export class F9PvpRoom extends Room<F9State> {
       const p = this.state.players.get(u.owner);
       const addr = p ? String(p.address || "") : (u.team === DEFENDER_TEAM ? this._ownerAddr : "");
       const t = ensure(u.team, addr);
-      const fate: "survived" | "injured" | "dead" = u.alive ? "survived" : (this._battleFates.get(u.id) || "dead");
+      /* 💀 „dead" TIK tada, kai mirtis realiai užfiksuota (`_rollInjury` → deadUnits/registras).
+       * Nepriskirtas kritęs unitas (be tokenId, `dev…`, arba savininkas jau atsijungęs) NĖRA miręs —
+       * jam neatsitiko nieko, ką būtų galima parodyti kaip nuostolį, tad eina į `escaped`.
+       * Anksčiau čia buvo `|| "dead"` ir ataskaita meluodavo apie prarastus NFT. */
+      const fate: "survived" | "injured" | "dead" | "escaped" =
+        u.alive ? "survived" : (this._battleFates.get(u.id) || "escaped");
       t.units.push({ utype: u.utype, level: u.level || 0, tokenId: u.tokenId || "", fate });
-      if (fate === "survived") t.survived++; else if (fate === "injured") t.injured++; else t.dead++;
+      if (fate === "survived") t.survived++;
+      else if (fate === "injured") t.injured++;
+      else if (fate === "dead") t.dead++;
+      else t.escaped++;
     });
     return teams;
   }
   private _endMatch(winnerSid: string) {
     if (this.state.phase === "ended") return;
+    void this._burnFlush();   // 🔥 mačo aukos sudeginamos NEDELSIANT (nelaukiam 2.5s lango)
     this.state.phase = "ended";
     this.state.gameStarted = false;
     this.state.winnerSid = winnerSid;
@@ -4138,7 +4466,8 @@ export class F9PvpRoom extends Room<F9State> {
           if (ownAddr === this._ownerAddr) {   // 📜 gynėjo nuostolis per raidą → ataskaitai
             if (res.fate === "dead") this._raidKilled.add(tgt.tokenId); else this._raidInjured.add(tgt.tokenId);
           }
-          const payload = { tokenId: tgt.tokenId, utype: tgt.utype, level: tgt.level || 0, fate: res.fate, eta: res.eta, queuePos: res.queuePos, saved: !!res.saved };   // 🪽 saved = BLESS neleido mirti
+          // 🪽 saved = BLESS neleido mirti · 🔥 burn = mirus NFT bus deginamas grandinėje (jei sukonfigūruota)
+          const payload = { tokenId: tgt.tokenId, utype: tgt.utype, level: tgt.level || 0, fate: res.fate, eta: res.eta, queuePos: res.queuePos, saved: !!res.saved, burn: res.fate === "dead" && burnEnabled() };
           for (const c of this.clients) {   // pranešam SAVININKUI, jei jis šiame kambaryje
             const cp = this.state.players.get(c.sessionId);
             if (cp && String(cp.address || "").trim().toLowerCase() === ownAddr) {

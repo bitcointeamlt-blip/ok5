@@ -23442,6 +23442,40 @@
 
     }
 
+    /* 📱🔒 08-23 (Ronkelife.ron: „when rotate the screen in ball battle i lose my units = forfeit").
+
+     * Užšaldymas iki šiol galiojo TIK desktop'ui. Mobiliajame, vykstant mūšiui, pasukus telefoną
+
+     * `canvas.width/height` būdavo perskaičiuojami — proporcija apsiverčia (portrait↔landscape), arena
+
+     * pasikeičia, ir žemiau esantis remap unitus išmeta už naujų sienų, kur fizika juos „pastumia".
+
+     * Žaidėjui tai atrodo kaip prarasti unitai ir forfeit. Dabar mobiliajame elgiamės kaip desktop'e:
+
+     * vidinė rezoliucija NEKEIČIAMA (koordinatės identiškos), o naują ekrano formą užpildom TIK per CSS,
+
+     * išlaikydami proporciją (contain) ir centruodami — todėl niekas nepajuda ir nieko neprarandama. */
+
+    if (active && _IS_MOBILE) {
+
+      var _lw = (window.__logicalW ? window.__logicalW() : window.innerWidth);
+
+      var _lh = (window.__logicalH ? window.__logicalH() : window.innerHeight);
+
+      canvas.style.position = 'absolute';
+
+      canvas.style.left = '0';
+
+      canvas.style.top = '0';
+
+      canvas.style.width = _lw + 'px';
+
+      canvas.style.height = _lh + 'px';
+
+      return;
+
+    }
+
     const _oldW = canvas.width, _oldH = canvas.height;   // prieš keičiant — pozicijų remap'ui (mobile/neaktyvus)
 
     const screenW = window.innerWidth, screenH = window.innerHeight;
@@ -23875,9 +23909,17 @@
 
     const claimedSuccess = (resp.xpTxHashes || []);
 
+    // 🪽 08-23: BLESS neleido šiems sudegti — backend'as juos išėmė iš burn TX. Pasakom žaidėjui,
+    //    kitaip unitas dingsta iš mūšio, o piniginėje lieka, ir atrodo kaip klaida.
+    const blessSaved = resp.savedTokenIds || [];
+
+    if (blessSaved.length) console.log('[F12 settle] 🪽 BLESS išgelbėjo:', blessSaved.join(', '));
+
     _showSettleResult({
 
       dead: actuallyBurned,
+
+      blessSaved: blessSaved,
 
       claimed: claimedSuccess.map(x => ({
 
@@ -24122,6 +24164,14 @@
 
       html += '<div style="font-size:7px;opacity:0.6;margin-top:4px;text-align:center">Burn tx: ' + info.burnHash.slice(0, 14) + '...</div>';
 
+    }
+
+    /* 🪽 08-23: BLESS neleido unitui sudegti. Be šito pranešimo unitas dingsta iš mūšio, o NFT lieka
+     * piniginėje — žaidėjui atrodytų kaip klaida, o skydas būtų nurašytas nepastebimai. */
+    if (info.blessSaved && info.blessSaved.length) {
+      html += '<div style="margin-top:10px;padding:7px;background:rgba(120,220,255,0.12);border:1px solid #4aa8c8;color:#aef0f7;font-size:7px;line-height:1.5;text-align:center">'
+        + '🪽 DEATH SHIELD SAVED ' + info.blessSaved.length + ' UNIT' + (info.blessSaved.length > 1 ? 'S' : '')
+        + '<div style="opacity:0.75;margin-top:3px">#' + info.blessSaved.join(' · #') + ' — NFT not burned. Shield consumed.</div></div>';
     }
 
     if (info.relayWarning) {

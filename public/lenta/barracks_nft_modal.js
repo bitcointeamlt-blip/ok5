@@ -724,7 +724,13 @@
           || 'Backend rejected battle start';
         const detail = startResp && startResp.detail ? ('\n\nDetail: ' + startResp.detail) : '';
         const msg = baseMsg + detail;
-        if (startResp && startResp.existingBattleId) {
+        if (startResp && Array.isArray(startResp.deadTokenIds) && startResp.deadTokenIds.length) {
+          /* 💀 Pilyje žuvęs unitas nebegali kautis niekur — nei pilyje, nei čia. Įvardijam KURIE,
+           * kad žaidėjas žinotų, ką išimti iš būrio, o ne spėliotų. */
+          const ids = startResp.deadTokenIds.map(function (t) { return '#' + t; }).join(', ');
+          alert('These units died defending or raiding a castle and cannot fight again:\n\n' + ids
+            + '\n\nRemove them from your squad and start the battle again.');
+        } else if (startResp && startResp.existingBattleId) {
           const idStr = String(startResp.existingBattleId);
           alert('You have an unfinished battle (#' + idStr.slice(0, 16) + '...). Wait ~30min for it to expire, switch wallet account, or DM admin to clear.');
         } else {

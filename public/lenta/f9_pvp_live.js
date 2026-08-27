@@ -93,6 +93,34 @@
   try { window._f9TestAttackAlarm = _f9PlayAttackAlarm; } catch (_) {}   // 🧪 test: konsolėje `_f9TestAttackAlarm()`
 
   function S() { return B ? B.S : (window.S || null); }
+  /* 📱 Telefono aptikimas kaulų widget'ui. NEsiremiam vien User-Agent: Chrome „Desktop site" režime
+   * Android'as prisistato kaip `X11; Linux x86_64` (be „Android"/„Mobile"), ir telefonas būtų palaikytas
+   * kompiuteriu. Todėl PIRMA klausiam paties įrenginio — ar pelė „stambi" (pirštas) ir ar yra lietimas. */
+  /* 📱🦴 08-23 (user): telefone F12 „ball" žaidime kaulų balanso NErodom — widget'as yra `position:fixed`
+   * viršuje per vidurį ir gula ant paties žaidimo lauko, o ten ekrano aukščio ir taip mažai.
+   * Desktop'e ir kituose aukštuose lieka kaip buvo. Grąžina true, jei paslėpė.
+   * ⚠️ Tikrinti reikia NE tik `_syncBones` viduje: tą kviečia F9 būsenos atnaujinimai, o įėjus į F12 jie
+   * nustoja ateiti ⇒ funkcija nebekviečiama ir widget'as lieka kabėti (būtent taip ir buvo pirmu bandymu).
+   * Todėl žemiau dar sukasi savas 500ms tikrintuvas. */
+  function _f12HideBones() {
+    try {
+      var st = S();
+      if (!_IS_MOBILE_BONE || !boneBalEl || !st || st.floor !== 12) return false;
+      if (boneBalEl.style.display !== 'none') {
+        boneBalEl.style.display = 'none';
+        document.body.classList.remove('f9-bones-live');
+      }
+      return true;
+    } catch (_) { return false; }
+  }
+  var _IS_MOBILE_BONE = (function () {
+    try {
+      if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+      if ((navigator.maxTouchPoints || 0) > 1) return true;
+    } catch (_) {}
+    return /iPhone|iPod|Android.*Mobile|BlackBerry|IEMobile|Opera Mini|Android/i.test(navigator.userAgent || '');
+  })();
+  setInterval(_f12HideBones, 500);   // 📱 F12 gali būti atidarytas be jokio F9 atnaujinimo — tikrinam patys
   function rndAddr() { return '0xlive' + Math.floor(Math.random() * 1e6); }
   function pnow() { return (window.performance ? performance.now() : Date.now()); }
   function _room() { return window.F9PVP && window.F9PVP.room; }
@@ -151,6 +179,7 @@
     _mb.bones = session; _mb.bank = _boneBankVal; _mb.total = target; _mb.mult = me.boneMult || 1; _mb.ronke = target * 5;   // 1 kaulas = 5 RONKE (== serverio BONE_VALUE_RONKE)
     _ui(); if (!boneBalEl) return;
     if (!started) { boneBalEl.style.display = 'none'; document.body.classList.remove('f9-bones-live'); _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true; return; }
+    if (_f12HideBones()) return;   // 📱🦴 telefone F12 „ball" žaidime balanso nerodom (žr. _f12HideBones)
     boneBalEl.style.display = 'flex';
     document.body.classList.add('f9-bones-live');   // 📱 notifikacijos nusileidžia žemiau widget'o (style.css)
     // Pirmas load (scene-enter / bankas ką tik sužinotas) → SNAP be animacijos/pulse (bankas ne „nauji" kaulai)
@@ -1355,8 +1384,55 @@
       window._f9OnField = new Set((e && Array.isArray(e.onField)) ? e.onField.map(String) : []);
       window._f9Reserve = new Set((e && Array.isArray(e.reserve)) ? e.reserve.map(String) : []);
       window._f9Shield = new Set((e && Array.isArray(e.shield)) ? e.shield.map(String) : []);   // 🪽 ant kurių unitų uždėtas BLESS skydas
+      /* 💀 REALI mirties tikimybė iš serverio (0 = taisyklė išjungta) + ar mirus NFT deginamas grandinėje.
+       * Be jos DEATH SHIELD siūlytų pirkti apsaugą nuo rizikos, kurios tuo metu nėra. */
+      window._f9DeathPct = (e && typeof e.deathPct === 'number') ? e.deathPct : 0;
+      window._f9BurnOn = !!(e && e.burnOn);
       window._f9FieldAt = recv;   // šviežumo žymė (inventorius naudoja tik jei šviežia + savo pilyje)
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
+    /* 🔥📜 BURN AUTORIZACIJOS (08-21) — serveris atsako, kiek iš anksto pasirašytų leidimų turim ir
+     * kokius slot'us dar reikia pasirašyti. Parašų reikia IŠ ANKSTO, nes pilį puola kai žaidėjas miega. */
+    room.onMessage('burn_auth_state', function (e) {
+      window._f9BurnAuth = {
+        have: (e && Number(e.have)) || 0,
+        need: (e && Number(e.need)) || 0,
+        slots: (e && Array.isArray(e.slots)) ? e.slots : [],
+        tokens: (e && Array.isArray(e.tokens)) ? e.tokens.map(String) : [],
+        enabled: !!(e && e.enabled),
+        days: (e && Number(e.days)) || 7,
+        at: Date.now(),
+      };
+      if (e && typeof e.deathPct === 'number') window._f9DeathPct = e.deathPct;
+      if (e && e.saved) {
+        var _add = Number(e.added);
+        try {
+          if (window.showGameNotification) {
+            if (_add > 0) window.showGameNotification('📜 AUTHORIZED', 'Saved ' + _add + ' authorization(s) — ' + ((e && e.have) || 0) + ' ready for battles while you are offline', '#aef0f7');
+            else window.showGameNotification('📜 AUTH', 'Nothing new was saved — the signature was rejected. You still have ' + ((e && e.have) || 0) + '.', '#e85d5d');
+          }
+        } catch (_) {}
+      }
+      try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
+    /* 💀🛒 Serverio atsakymas, kurie tokenai pilyje žuvę. Marketas juos pažymi ir neleidžia pirkti —
+     * kitaip pirkėjas sumokėtų RONKE už NFT, kuris žaidime jau negyvas. */
+    room.onMessage('dead_check', function (e) {
+      if (!e || !Array.isArray(e.dead)) return;
+      window._f9DeadUnits = window._f9DeadUnits instanceof Set ? window._f9DeadUnits : new Set();
+      e.dead.forEach(function (t) { window._f9DeadUnits.add(String(t)); });
+      try { if (typeof window._f9MktRenderIfOpen === 'function') window._f9MktRenderIfOpen(); } catch (_) {}
+    });
+    // 🔥 NFT realiai sudegintas grandinėje (mirties patvirtinimas su tx)
+    room.onMessage('unit_burned', function (e) {
+      if (!e || !e.tokenId) return;
+      try {
+        if (window.showGameNotification) {
+          window.showGameNotification('🔥 NFT BURNED',
+            String(e.utype || 'unit').toUpperCase() + ' #' + e.tokenId + ' was burned on-chain — the token no longer exists', '#e85d5d');
+        }
+      } catch (_) {}
+      try { console.log('[F9] 🔥 burned #' + e.tokenId + ' tx=' + (e.txHash || '')); } catch (_) {}
     });
     // 🪽🛡 BLESS SKYDAS — uždėjimo rezultatas (08-19)
     room.onMessage('bless_protect_result', function (e) {
@@ -1396,6 +1472,18 @@
           else if (e && e.reason === 'units_unknown') window.showGameNotification('⚡ BLESS', 'Could not read your units on-chain — try again in a moment', '#e85d5d');
           else if (e && e.reason === 'nothing_to_claim') window.showGameNotification('⚡ BLESS', 'Nothing to claim yet — come back later', '#8a9aaa');
           else window.showGameNotification('⚡ BLESS', 'Claim failed — try again', '#e85d5d');
+        }
+      } catch (_) {}
+      try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
+    });
+    /* ⚡🏭 BLESS GENERATORIUS (08-22) — pirktas/upgrade'intas už kaulus. Serveris grąžina naują lygį ir
+     * ŠVIEŽIĄ `insta` (paros lubos jau su nauju lygiu), tad panelė iškart rodo teisingą claim skaičių. */
+    room.onMessage('blessgen_upgraded', function (e) {
+      if (e && e.insta) window._f9HospInsta = e.insta;
+      try {
+        if (window.showGameNotification) {
+          if (e && e.max && !e.nextCost) window.showGameNotification('⚡ BLESS GENERATOR', 'Fully upgraded — L' + (e.level || 5) + ' gives +' + (e.level || 5) + ' BLESS every 24h', '#7fdfea');
+          else window.showGameNotification('⚡ BLESS GENERATOR', 'Level ' + (e.level || 1) + ' — now +' + (e.level || 1) + ' BLESS every 24h', '#7fdfea');
         }
       } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
@@ -1443,7 +1531,8 @@
         } else
         try { if (window.showGameNotification) window.showGameNotification('🏥 HOSPITAL', txt, '#ffcf5c'); } catch (_) {}
       } else {
-        try { if (window.showGameNotification) window.showGameNotification('💀 UNIT LOST', String(e.utype || 'unit').toUpperCase() + ' died in battle — gone forever', '#e85d5d'); } catch (_) {}
+        // 🔥 e.burn — mirtis tikra ir grandinėje: NFT deginamas iš anksto pasirašyta autorizacija
+        try { if (window.showGameNotification) window.showGameNotification('💀 UNIT LOST', String(e.utype || 'unit').toUpperCase() + ' died in battle — gone forever' + (e.burn ? ' (NFT is being burned)' : ''), '#e85d5d'); } catch (_) {}
       }
     });
     // ⚰️ KAPINĖS — pot/rate (badge + collect UI). own=false kai raide žiūrim į gynėjo grobį.
@@ -1726,7 +1815,7 @@
     // 🐛 P-C3: išvalom SENOS sesijos ligoninės būseną PRIEŠ _f9pvpLive=true — kitaip 1.5s langą (kol ateis
     //   šviežias 'hospital' push) barracks_nft.fetchHospState skaitytų SENOS piniginės sužalotus kaip LIVE
     //   (→ deko/lauko „makalynė" perjungus piniginę). null (NE []) → fetchHospState kris atgal į per-adresą REST.
-    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9InstaReady = false; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null;
+    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9InstaReady = false; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null; window._f9BurnAuth = null;
     try { _closeRaidSettled(false); } catch (_) {}   // sena panelė (jei liko) — nuimam
     // 🏥 ligoninės/kapinių/🦴banko užklausos — po start'o, kai room stabilus (bankas reikalingas widget'o bendram balansui)
     setTimeout(function () { try { var r = _room(); if (r) { r.send('hospital_get'); r.send('cemetery_get'); r.send('bones_bank_get'); } } catch (_) {} }, 1500);
@@ -2053,7 +2142,7 @@
     window._f9pvpLive = false; window._f9pvpMyTeam = null;
     // 🐛 P-C3: išvalom ligoninės globalus išeinant (piniginės perjungimas/scenos išėjimas) — kad
     //   barracks_nft.fetchHospState nenaudotų SENOS sesijos sužalotų (deko sync šaltinis). null, NE [].
-    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9InstaReady = false; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null;
+    window._f9Hospital = null; window._f9HospReady = 0; window._f9HospInsta = null; window._f9InstaReady = false; window._f9HospStale = 0; window._f9OnField = null; window._f9Reserve = null; window._f9BurnAuth = null;
     window._f9Cap = null; window._f9CapState = null; _capLast = '';
     window._f9MyBones = null; _boneLast = ''; _boneShown = 0; _boneTargetPrev = 0; _boneSnapNext = true;   // 🦴 išeinant → reset (bankas liks, atsinaujins kitam start)
     if (boneEl) boneEl.style.display = 'none'; if (boneBalEl) boneBalEl.style.display = 'none';
@@ -2285,6 +2374,10 @@
   function upgradeHospital() {
     var r = _room(); if (r) { try { r.send('upgrade_hospital'); } catch (_) {} }
   }
+  // ⚡ BLESS GENERATORIUS — antra ligoninės dalis (08-22 user). Serveris validuoja savininką/kaulus/lygį.
+  function upgradeBlessGen() {
+    var r = _room(); if (r) { try { r.send('upgrade_blessgen'); } catch (_) {} }
+  }
   // 🛡 Savininkas nusiima skydą (nori būti puolamas anksčiau) — serveris validuoja owner.
   function removeShield() {
     var r = _room(); if (r) { try { r.send('shield_remove'); } catch (_) {} }
@@ -2508,7 +2601,7 @@
   }
 
   window.F9PvpLive = {
-    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, removeShield: removeShield, buildTower: buildTower, stop: stop,
+    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, removeShield: removeShield, buildTower: buildTower, stop: stop,
     isActive: active,
     netTick: netTick,
     sendCommand: sendCommand,
