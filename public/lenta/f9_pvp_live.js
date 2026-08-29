@@ -1561,6 +1561,21 @@
     });
     // ⚔️🛡 DUTY keitimo rezultatas — klaida (pvz. kovos metu) rodoma mine panelės žinutėj; sėkmė → cemetery jau atnaujins
     room.onMessage('duty_result', function (e) {
+      /* ✍️🟢 08-29 (user): DUTY = sutikimas su rizika. Serveris atmetė, nes nėra parašo → prašom jo ČIA PAT
+       * ir kartojam įjungimą. Žaidėjui tai vienas veiksmas: spaudi ON DUTY → piniginė klausia → esi DUTY. */
+      try {
+        if (e && !e.ok && String(e.error || '').indexOf('NEED_AUTH') !== -1 && window._f9SignForBattle && !window._f9DutyAuthRetry) {
+          window._f9DutyAuthRetry = true;
+          var dm0 = document.getElementById('f9mine-dutymsg');
+          if (dm0) { dm0.style.color = '#aef0f7'; dm0.textContent = '✍️ Sign to accept the risk — your units can die on duty'; }
+          window._f9SignForBattle().then(function (okSig) {
+            window._f9DutyAuthRetry = false;
+            if (okSig) { try { room.send('duty_set', { mode: 'online' }); } catch (_) {} }
+            else { var dm1 = document.getElementById('f9mine-dutymsg'); if (dm1) { dm1.style.color = '#e8a08a'; dm1.textContent = 'Signing cancelled — you stay SAFE'; } }
+          }).catch(function () { window._f9DutyAuthRetry = false; });
+          return;
+        }
+      } catch (_) { window._f9DutyAuthRetry = false; }
       try {
         var msg = document.getElementById('f9mine-dutymsg');
         if (!e || !e.ok) { if (msg) { msg.style.color = '#e8a08a'; msg.textContent = (e && e.error) ? e.error : 'Could not change duty'; } }
@@ -2501,6 +2516,7 @@
 
   /* ✍️ 08-29: sargas nuo begalinio ciklo — pasirašius kartojam raidą TIK vieną kartą. */
   var _f9AuthRetry = false;
+  var _f9DutyAuthRetry = false;   // ✍️ tas pats sargas DUTY jungikliui
   // 🗡️ RAID — puolam KITO žaidėjo pilį (LIVE). Užkraunam MŪSŲ deck'ą, jungiamės kaip puolikas į
   //    taikinio kambarį (filterBy owner). Taikinys offline / nėra kambario → raidPlayer null (vėliau=async).
   function launchRaid(targetAddr, opts) {

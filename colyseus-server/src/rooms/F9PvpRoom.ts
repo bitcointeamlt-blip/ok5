@@ -240,6 +240,10 @@ const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, N
  * 0 = IŠJUNGTA (numatyta). Mechanika paruošta ir ištestuota, bet įjungimas keičia žaidimo srautą
  * visiems, tad tai sąmoningas env sprendimas, kaip ir pati mirtis. */
 const DEPLOY_AUTH_MIN = Math.max(0, Math.floor(Number(process.env.F9_DEPLOY_AUTH_MIN) || 0));
+/* ✍️🟢 Kiek parašų reikia JUNGIANT DUTY. Užtenka VIENO: po bet kokio gauto raido pilis automatiškai
+ * grįžta į SAFE (auto-SAFE `_endMatch`), tad viena DUTY sesija = daugiausiai vienas mūšis.
+ * Vienas parašas = viena ekspozicija — tiksliai tiek sutikimo, kiek rizikos. */
+const DUTY_AUTH_MIN = Math.max(1, Math.floor(Number(process.env.F9_DUTY_AUTH_MIN) || 1));
 /* ⚔ Vienos komandos mūšio suvestinė. `escaped` = unitai, kuriems NIEKO neatsitiko (dezertyravus nuimti
  * nuo lauko arba nepriskirti) — jie NĖRA nuostolis ir NEGALI būti rodomi kaip mirę. */
 type RosterTeam = { team: number; address: string; units: any[]; survived: number; injured: number; dead: number; escaped: number };
@@ -979,6 +983,20 @@ export class F9PvpRoom extends Room<F9State> {
         if (Date.now() < lockUntil) {
           const mins = Math.max(1, Math.ceil((lockUntil - Date.now()) / 60000));
           try { client.send("duty_result", { ok: false, error: `On duty ${mins} more min — you committed to the fight.`, lockUntil }); client.send("cemetery", { ...this._cemPayload(addr), own: true }); } catch (_) {}
+          return;
+        }
+      }
+      /* ✍️🟢 SUTIKIMAS SU RIZIKA (user 2026-08-29): „gindamasis įjungdamas DUTY turėtų pasirašyti, kad
+       * sutinka su rizika, jog jo unitai gali mirti".
+       *   🛡 SAFE  — nepuolamas ⇒ rizikos nėra ⇒ parašo nereikia
+       *   🟢 DUTY  — puolamas ⇒ pasirašai, ir tik tada tampi taikiniu
+       * Užtenka VIENO parašo: po bet kokio gauto raido pilis automatiškai grįžta į SAFE (žr. auto-SAFE
+       * `_endMatch`), tad viena DUTY sesija = daugiausiai vienas mūšis. Vienas parašas = viena ekspozicija. */
+      if (want === "online" && c.duty !== "online") {
+        const _need = await this._authGateShortfall(addr, this._decks.get(client.sessionId) || [], DUTY_AUTH_MIN);
+        if (_need != null) {
+          console.log(`[F9PvpRoom] ✍️🚫 DUTY atmestas — ${addr.slice(0, 10)}… trūksta ${_need} parašo(-ų)`);
+          try { client.send("duty_result", { ok: false, error: "NEED_AUTH:" + _need, need: _need }); } catch (_) {}
           return;
         }
       }
@@ -3358,15 +3376,16 @@ export class F9PvpRoom extends Room<F9State> {
    * išjungti / dekas be tikrų NFT → praleidžiam (nėra ko saugoti).
    * ⚠️ FAIL-OPEN: jei baseino perskaityti nepavyko, žaidėjo NEBLOKUOJAM — DB triktis negali
    * palikti žmogaus be pilies. Blogiausiu atveju liks nesudegintas NFT, o ne užrakintas žaidimas. */
-  private async _authGateShortfall(addr: string, deck: DeckEntry[]): Promise<number | null> {
-    if (DEPLOY_AUTH_MIN <= 0 || !burnEnabled()) return null;
+  private async _authGateShortfall(addr: string, deck: DeckEntry[], min?: number): Promise<number | null> {
+    const need = min != null ? min : DEPLOY_AUTH_MIN;
+    if (DEPLOY_AUTH_MIN <= 0 || need <= 0 || !burnEnabled()) return null;
     const a = String(addr || "").trim().toLowerCase();
     if (!a) return null;
     const hasNft = deck.some((d) => d.tokenId && !/^dev/i.test(d.tokenId));
     if (!hasNft) return null;                       // nemokami unitai — nėra ką deginti
     try {
       const have = await burnAuthCount(a);
-      return have >= DEPLOY_AUTH_MIN ? null : DEPLOY_AUTH_MIN - have;
+      return have >= need ? null : need - have;
     } catch (_) { return null; }                    // fail-open
   }
   /* ✍️🚪 Puolikas irgi privalo turėti parašus — jis online, tad prašyti galima čia pat. Be šito
