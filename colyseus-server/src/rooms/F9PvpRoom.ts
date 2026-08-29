@@ -224,6 +224,22 @@ const DEATH_PCT = Math.round((1 - INJURY_CHANCE) * 100);   // rodymui/logams
  *   nemokamas. Kokia dalis dar GYVŲ pabėgusiojo NFT unitų nubaudžiama tuo pačiu keliu kaip kritusieji
  *   mūšyje (_rollInjury → ligoninė; įjungus mirtį — ir 10% žūtis). 0 = išjungta (senas elgesys). */
 const DESERT_PCT = process.env.F9_DESERT_PCT != null ? Math.max(0, Math.min(1, Number(process.env.F9_DESERT_PCT))) : 0;   // 2026-08-25 (user): IŠJUNGTA. Grąžinti — F9_DESERT_PCT=0.5
+/* ✍️🚪 PARAŠŲ VARTAI DEDANT UNITUS Į LAUKĄ (user 2026-08-29: „kas garantuos, kad ir jam galios tos pačios
+ * taisyklės?").
+ *
+ * PROBLEMA: mirtis žaidime galioja visiems vienodai (serveris ją fiksuoja, parašo neklausdamas), bet NFT
+ * sudeginti be savininko EIP-712 leidimo NEĮMANOMA — taip veikia nuosavybė. Nepasirašęs žaidėjas lieka su
+ * „lavonu": žaidime unitas miręs, o NFT piniginėje — ir jį dar galima parduoti nieko neįtariančiam
+ * pirkėjui IŠORINĖJE rinkoje (savas marketas tokį blokuoja).
+ *
+ * SPRENDIMAS (user idėja): parašo reikalaujam tada, kai žaidėjas GARANTUOTAI online — dedant unitus į
+ * lauką. Unitas pilyje neatsiranda pats; kažkas jį ten pastatė būdamas prisijungęs.
+ *      Unitas lauke ⇒ parašai byloje.  Nėra parašų ⇒ nėra unito lauke.
+ * Puolikui tas pats tikrinimas prieš raidą — jis irgi online.
+ *
+ * 0 = IŠJUNGTA (numatyta). Mechanika paruošta ir ištestuota, bet įjungimas keičia žaidimo srautą
+ * visiems, tad tai sąmoningas env sprendimas, kaip ir pati mirtis. */
+const DEPLOY_AUTH_MIN = Math.max(0, Math.floor(Number(process.env.F9_DEPLOY_AUTH_MIN) || 0));
 /* ⚔ Vienos komandos mūšio suvestinė. `escaped` = unitai, kuriems NIEKO neatsitiko (dezertyravus nuimti
  * nuo lauko arba nepriskirti) — jie NĖRA nuostolis ir NEGALI būti rodomi kaip mirę. */
 type RosterTeam = { team: number; address: string; units: any[]; survived: number; injured: number; dead: number; escaped: number };
@@ -1575,7 +1591,7 @@ export class F9PvpRoom extends Room<F9State> {
         throw new Error("NO_DEFENDERS");
       }
       // ⚔️🚫 ta pati riba PUOLIKUI (08-19): su 3 unitais raidas nebeleidžiamas
-      try { this._checkRaiderSquad(client, String(p.address || "")); }
+      try { this._checkRaiderSquad(client, String(p.address || "")); await this._checkRaiderAuth(String(p.address || ""), this._decks.get(client.sessionId) || []); }
       catch (e) { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw e; }
       // ⚔️💰 RAID FEE (PASKUTINIS gate — atmestas join TX nesudegina): 10 RONKE → treasury, moka TIK puolikas.
       if (raidFeeEnabled()) {
@@ -1719,7 +1735,7 @@ export class F9PvpRoom extends Room<F9State> {
         throw new Error("NO_DEFENDERS");
       }
       // ⚔️🚫 ta pati riba PUOLIKUI (08-19): su 3 unitais raidas nebeleidžiamas
-      try { this._checkRaiderSquad(client, String(p.address || "")); }
+      try { this._checkRaiderSquad(client, String(p.address || "")); await this._checkRaiderAuth(String(p.address || ""), this._decks.get(client.sessionId) || []); }
       catch (e) { this.state.players.delete(client.sessionId); this._decks.delete(client.sessionId); this._reserves.delete(client.sessionId); throw e; }
       // ⚔️💰 RAID FEE (PASKUTINIS gate, kaip async): 10 RONKE → treasury, moka TIK puolikas.
       if (raidFeeEnabled()) {
@@ -3062,6 +3078,17 @@ export class F9PvpRoom extends Room<F9State> {
     try { if (p.address) newDeck = await this._chainFilterDeck(String(p.address), newDeck); } catch (_) {}
     if (this.state.players.size > 1) return;          // re-check po await (raideris galėjo įeiti)
     if (_seq !== this._setSquadSeq) return;           // 🔒 per await atėjo NAUJESNIS set_squad → šis pasenęs, atmetam
+    /* ✍️🚪 PARAŠŲ VARTAI: unitas į lauką patenka TIK jei jo savininkas paliko galiojančių burn
+     * autorizacijų. Čia jis online — vienintelis momentas, kai jo galima paprašyti (pilį puola miegant). */
+    {
+      const need = await this._authGateShortfall(String(p.address || ""), newDeck);
+      if (need != null) {
+        console.log(`[F9PvpRoom] ✍️🚫 deploy atmestas — ${String(p.address).slice(0, 10)}… trūksta ${need} parašo(-ų)`);
+        try { client.send("deploy_blocked", { reason: "auth", need, target: DEPLOY_AUTH_MIN }); } catch (_) {}
+        return;
+      }
+      if (_seq !== this._setSquadSeq || this.state.players.size > 1) return;   // 🔒 re-check po dar vieno await
+    }
     this._decks.set(client.sessionId, newDeck);
     // ⚔ 07-06 user: laukas = kiek žaidėjas NORI (battle squad dydis, 1..12) — ne visada 12. Leidžia „palikti tik 1".
     //   msg.active nėra (senas klientas) → MAX_ACTIVE (senas elgesys). Klampinam ir įsimenam sesijai.
@@ -3315,6 +3342,35 @@ export class F9PvpRoom extends Room<F9State> {
    * RAID_FIELD_REQ iki šiol buvo taikomas TIK gynėjui — puolikas galėjo atjoti su 3 unitais, juos prarasti
    * ir taip „atsirakinti" kasimo vartus (100% puoliko aukų ≥ 50% ⇒ siege užskaitomas ABIEM pusėm).
    * Dabar riba ta pati abiem: nori pulti — atsivesk tokią pat komandą, kokios reikalaujama iš gynėjo. */
+  /* ✍️🚪 Ar žaidėjas turi pakankamai GALIOJANČIŲ burn autorizacijų, kad jo NFT galėtų dalyvauti.
+   * Grąžina `null` kai viskas gerai, arba trūkstamą kiekį. Deginimas nesukonfigūruotas / vartai
+   * išjungti / dekas be tikrų NFT → praleidžiam (nėra ko saugoti).
+   * ⚠️ FAIL-OPEN: jei baseino perskaityti nepavyko, žaidėjo NEBLOKUOJAM — DB triktis negali
+   * palikti žmogaus be pilies. Blogiausiu atveju liks nesudegintas NFT, o ne užrakintas žaidimas. */
+  private async _authGateShortfall(addr: string, deck: DeckEntry[]): Promise<number | null> {
+    if (DEPLOY_AUTH_MIN <= 0 || !burnEnabled()) return null;
+    const a = String(addr || "").trim().toLowerCase();
+    if (!a) return null;
+    const hasNft = deck.some((d) => d.tokenId && !/^dev/i.test(d.tokenId));
+    if (!hasNft) return null;                       // nemokami unitai — nėra ką deginti
+    try {
+      const have = await burnAuthCount(a);
+      return have >= DEPLOY_AUTH_MIN ? null : DEPLOY_AUTH_MIN - have;
+    } catch (_) { return null; }                    // fail-open
+  }
+  /* ✍️🚪 Puolikas irgi privalo turėti parašus — jis online, tad prašyti galima čia pat. Be šito
+   * puolimas būtų pigesnis nei gynyba: rizikuotum kito NFT, o savo ne.
+   * ⚠️ ATSKIRAS metodas, o ne dalis `_checkRaiderSquad`: tas sargas yra SINCHRONINIS ir jį kviečia
+   * simuliacijos su paprastu try/catch. Padarius jį async, throw virstų neapdorotu Promise atmetimu
+   * ir sarga TYLIAI nustotų veikti (`rules.sim.js` tai pagavo iškart). */
+  private async _checkRaiderAuth(atkAddrRaw: string, deck: DeckEntry[]) {
+    const atk = String(atkAddrRaw || "").trim().toLowerCase();
+    const need = await this._authGateShortfall(atk, deck);
+    if (need != null) {
+      console.log(`[F9PvpRoom] ✍️🚫 raid atmestas — ${atk.slice(0, 10)}… trūksta ${need} parašo(-ų)`);
+      throw new Error("NEED_AUTH:" + need + ":" + DEPLOY_AUTH_MIN);
+    }
+  }
   private _checkRaiderSquad(client: Client, atkAddrRaw: string) {
     const atk = String(atkAddrRaw || "").trim().toLowerCase();
     const deck = this._decks.get(client.sessionId) || [];
