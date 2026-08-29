@@ -244,6 +244,10 @@ const DEPLOY_AUTH_MIN = Math.max(0, Math.floor(Number(process.env.F9_DEPLOY_AUTH
  * grįžta į SAFE (auto-SAFE `_endMatch`), tad viena DUTY sesija = daugiausiai vienas mūšis.
  * Vienas parašas = viena ekspozicija — tiksliai tiek sutikimo, kiek rizikos. */
 const DUTY_AUTH_MIN = Math.max(1, Math.floor(Number(process.env.F9_DUTY_AUTH_MIN) || 1));
+/* 🤖🛡 AI PERĖMIMAS atsijungus (user 2026-08-29). Numatyta ĮJUNGTA: be jo išjungimas mūšyje yra
+ * pigiausias pabėgimas — mačas baigiasi tą sekundę, o 100% „aukų" atrakina kasimo ciklą abiem.
+ * `F9_AI_TAKEOVER=0` grąžina seną elgesį be deploy'o. */
+const AI_TAKEOVER = process.env.F9_AI_TAKEOVER !== "0";
 /* ⚔ Vienos komandos mūšio suvestinė. `escaped` = unitai, kuriems NIEKO neatsitiko (dezertyravus nuimti
  * nuo lauko arba nepriskirti) — jie NĖRA nuostolis ir NEGALI būti rodomi kaip mirę. */
 type RosterTeam = { team: number; address: string; units: any[]; survived: number; injured: number; dead: number; escaped: number };
@@ -3199,6 +3203,32 @@ export class F9PvpRoom extends Room<F9State> {
       let winnerSid = "";
       this.state.players.forEach((p) => { if (p.sessionId !== sid) winnerSid = p.sessionId; });
       this._endMatch(winnerSid);
+      return;
+    }
+    /* 🤖🛡 AI PERĖMIMAS (user 2026-08-29: „jeigu palieku žaidimą, gynyba tęstųsi — tik vietoj manęs
+     * perimtų AI"). Iki šiol išėjimas nurašydavo VISUS unitus nuo lauko ⇒ mačas baigdavosi tą sekundę,
+     * oponentas gaudavo nemokamą pergalę, o 100% „aukų" dar ir atrakindavo kasimo ciklą abiem pusėm.
+     * Dabar gyvi unitai LIEKA lauke ir ginasi patys, lygiai kaip offline gynėjo pilis async raide —
+     * `_aitakeover.sim.mjs` rodo, kad taip elgsena beveik sutampa su OFFLINE etalonu (75% vs 100%
+     * pergalių), o senasis kelias duodavo 0%.
+     *   • laikom postą ten, kur unitas paliktas (leash) — jokio vaikymosi be komandų
+     *   • žaidėjo objektas NEtrinamas: rezervas, adresas ir likimai lieka pasiekiami
+     *   • kritę toliau eina per įprastą `_rollInjury` ⇒ mirtis ir BLESS galioja kaip visada */
+    if (AI_TAKEOVER && this.state.phase === "playing") {
+      let held = 0;
+      this.state.units.forEach((u) => {
+        if (u.owner !== sid || !u.alive) return;
+        const ai = this._ai.get(u.id);
+        if (ai) {
+          ai.order = "hold"; ai.engageId = ""; (ai as any).siegeTarget = undefined;
+          (ai as any).path = undefined; (ai as any).pathIdx = 0;
+          (ai as any).leashX = u.x; (ai as any).leashY = u.y;   // postas = kur paliko
+        }
+        u.cmd = "idle"; u.tx = u.x; u.ty = u.y; u.targetId = "";
+        held++;
+      });
+      console.log(`[F9PvpRoom] 🤖🛡 AI perėmė ${held} unitų (${sid.slice(0, 8)}…) — mūšis tęsiasi be žaidėjo`);
+      this._checkWin();   // jei gyvų nebeliko — normali pabaiga; kitaip mūšis eina toliau
       return;
     }
     // FAZA E: čia mirusiems unitams eis lock/permadeath settlement.
