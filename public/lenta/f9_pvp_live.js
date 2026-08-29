@@ -2526,18 +2526,11 @@
     if (!window.F9PVP) { console.error('[F9Live] F9PVP missing'); return; }
     var target = String(targetAddr || '').trim().toLowerCase();
     if (!target) { console.warn('[F9Live] launchRaid: no target'); return; }
-    /* ✍️⚔️ 08-29: parašo prašom DAR BŪDAMI namų kambaryje. `stop()` žemiau jį uždaro, o parašų slot'us
-     * duoda serveris per kambario žinutę — vėliau kreiptis nebėra kur, ir raidas būdavo atmetamas
-     * TYLIAI: nei popup'o, nei klaidos. Pasirašius tęsiam; atsisakius liekam namie. */
-    if (!opts._signed && window._f9SignForBattle && window.F9PVP && window.F9PVP.room) {
-      window._f9SignForBattle().then(function (okSig) {
-        if (okSig) launchRaid(targetAddr, Object.assign({}, opts, { _signed: true }));
-        else if (window.showGameNotification) window.showGameNotification('✍️ SIGN', 'Signing cancelled — your units stay home', '#e8a54a');
-      }).catch(function () {
-        launchRaid(targetAddr, Object.assign({}, opts, { _signed: true }));   // nepavyko paklausti — bandom kaip anksčiau
-      });
-      return;
-    }
+    /* ✍️⚔️ 08-29: ČIA BUVO automatinis pasirašymas prieš raidą, kviečiantis `launchRaid` iš naujo.
+     * ATŠAUKTA — pakartotinis kvietimas tuo pačiu adresu suveikdavo kaip ghost-cleanup ir išmesdavo
+     * PIRMĄJĄ sesiją: mūšis baigdavosi per ~13 s, visi puoliko unitai `escaped`, nė karto nekovoję
+     * (prod įrašas `12:38 ATK 0/0/0/esc12`). Parašai imami ligoninės panelėje (☠️ PERMADEATH AUTH),
+     * o serverio `NEED_AUTH` klientui pasako, ko trūksta. Vieno įėjimo taško laikomės griežtai. */
     try { stop(); } catch (_) {}   // paliekam SAVO pilį (home room) prieš puolant svetimą
     on = true; started = false; simInited = false; _ended = false; _mir = {};
     window.__f9HomeActive = false; window.__f9RaidActive = true; window.__f9RaidTarget = target;
