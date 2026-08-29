@@ -12271,10 +12271,11 @@ async function _f9SignForBattle() {
     }
     const st = window._f9BurnAuth || {};
     if (!st.enabled) return true;                          /* deginimas neįjungtas — nėra ko pasirašinėti */
-    if (!Array.isArray(st.slots) || !st.slots.length) return false;
+    if ((st.have || 0) >= 1) return true;                  /* jau turim — vartams užtenka vieno */
+    if (!Array.isArray(st.slots) || !st.slots.length) return true;   /* nėra ko pasirašyti — nestabdom */
     await _f9BurnAuthSign(null);
     const st2 = window._f9BurnAuth || {};
-    return (st2.have || 0) > (st.have || 0);
+    return (st2.have || 0) > 0;
   } catch (_) { return false; }
 }
 try { window._f9SignForBattle = _f9SignForBattle; } catch (_) {}
