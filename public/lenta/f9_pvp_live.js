@@ -1422,6 +1422,29 @@
       }
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
+    /* ✍️🚪 08-29: serveris neįleido unitų į lauką, nes parašai nedengia deko (pvz. ką tik užregistravai
+     * NAUJUS NFT). Be šito apdorotojo deploy būdavo atmetamas TYLIAI: žaidėjas pažymi unitus, spaudžia,
+     * ir nieko neįvyksta — jokios žinutės, jokios priežasties. Pasakom, ko trūksta, ir pasiūlom pasirašyti. */
+    room.onMessage('deploy_blocked', function (e) {
+      var need = (e && e.need) || 0;
+      try {
+        if (window.showGameNotification) {
+          window.showGameNotification('✍️ SIGN NEEDED',
+            'Your deck changed — sign ' + need + ' authorization(s) so the new units can be burned if they die', '#e8a54a');
+        }
+      } catch (_) {}
+      try {
+        if (window._f9SignForBattle && !window._f9DeployAuthRetry) {
+          window._f9DeployAuthRetry = true;
+          window._f9SignForBattle().then(function (okSig) {
+            window._f9DeployAuthRetry = false;
+            if (okSig && window.showGameNotification) {
+              window.showGameNotification('✅ SIGNED', 'Now deploy your units again', '#6fcf5c');
+            }
+          }).catch(function () { window._f9DeployAuthRetry = false; });
+        }
+      } catch (_) { window._f9DeployAuthRetry = false; }
+    });
     /* 💀🛒 Serverio atsakymas, kurie tokenai pilyje žuvę. Marketas juos pažymi ir neleidžia pirkti —
      * kitaip pirkėjas sumokėtų RONKE už NFT, kuris žaidime jau negyvas. */
     room.onMessage('dead_check', function (e) {

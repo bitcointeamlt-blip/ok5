@@ -3125,16 +3125,22 @@ export class F9PvpRoom extends Room<F9State> {
     if (_seq !== this._setSquadSeq) return;           // 🔒 per await atėjo NAUJESNIS set_squad → šis pasenęs, atmetam
     /* ✍️🚪 PARAŠŲ VARTAI: unitas į lauką patenka TIK jei jo savininkas paliko galiojančių burn
      * autorizacijų. Čia jis online — vienintelis momentas, kai jo galima paprašyti (pilį puola miegant). */
+    /* ⚠️ 08-29 UŽBURTAS RATAS, kurį reikėjo užtaisyti: vartai atmesdavo deką PRIEŠ jį išsaugant, o
+     * pasirašymo slot'ams tokenų sąrašą duoda `_burnTokens` iš IŠSAUGOTO deko. Užregistravęs naujus
+     * NFT žaidėjas pasirašydavo SENĄ deką, vartai vėl neleisdavo, ir taip be galo — unitų į lauką
+     * įdėti tapdavo neįmanoma. Todėl deką IŠSAUGOM visada (tada parašas dengs teisingus tokenus),
+     * o blokuojam tik patį DISLOKAVIMĄ. */
+    this._decks.set(client.sessionId, newDeck);
     {
       const need = await this._authGateShortfall(String(p.address || ""), newDeck);
       if (need != null) {
         console.log(`[F9PvpRoom] ✍️🚫 deploy atmestas — ${String(p.address).slice(0, 10)}… trūksta ${need} parašo(-ų)`);
         try { client.send("deploy_blocked", { reason: "auth", need, target: DEPLOY_AUTH_MIN }); } catch (_) {}
+        try { client.send("burn_auth_state", { have: 0, need, slots: [], tokens: this._burnTokens(client.sessionId), enabled: burnEnabled(), deathPct: DEATH_PCT }); } catch (_) {}
         return;
       }
       if (_seq !== this._setSquadSeq || this.state.players.size > 1) return;   // 🔒 re-check po dar vieno await
     }
-    this._decks.set(client.sessionId, newDeck);
     // ⚔ 07-06 user: laukas = kiek žaidėjas NORI (battle squad dydis, 1..12) — ne visada 12. Leidžia „palikti tik 1".
     //   msg.active nėra (senas klientas) → MAX_ACTIVE (senas elgesys). Klampinam ir įsimenam sesijai.
     if (msg && msg.active != null) this._activeCount.set(client.sessionId, this._clampActive(msg.active));
