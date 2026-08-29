@@ -3220,7 +3220,16 @@ export class F9PvpRoom extends Room<F9State> {
      *   • laikom postą ten, kur unitas paliktas (leash) — jokio vaikymosi be komandų
      *   • žaidėjo objektas NEtrinamas: rezervas, adresas ir likimai lieka pasiekiami
      *   • kritę toliau eina per įprastą `_rollInjury` ⇒ mirtis ir BLESS galioja kaip visada */
-    if (AI_TAKEOVER && this.state.phase === "playing") {
+    /* 🛡 TIK GYNĖJUI (2026-08-29, incidentas prode): perėmimas buvo taikomas ABIEM pusėm, o puoliko
+     * unitai, perjungti į „laikyti postą", nustoja pulti. Gynėjai irgi laiko postą ⇒ niekas nieko
+     * nepuola ⇒ `_checkWin` niekada nesuveikia ir MŪŠIS PAKIMBA: nėra nei mačo įrašo, nei skydo, nei
+     * auto-SAFE, o puolikas jau sumokėjęs 10 RONKE mokestį. (`_aitakeover.sim.mjs` tai rodė — režimas
+     * be aktyvaus puolimo nesibaigdavo per 45 min.)
+     * Puolikas išėjęs elgiasi kaip anksčiau: unitai pasitraukia pažymėti `escaped` (ne „aukos"),
+     * mūšis baigiasi, ir kasimo ciklas NEatsirakina — exploitas lieka uždarytas. */
+    const _out = this.state.players.get(sid);
+    const _isDefender = !!_out && _out.team === DEFENDER_TEAM;
+    if (AI_TAKEOVER && _isDefender && this.state.phase === "playing") {
       let held = 0;
       this.state.units.forEach((u) => {
         if (u.owner !== sid || !u.alive) return;
@@ -3521,8 +3530,13 @@ export class F9PvpRoom extends Room<F9State> {
       let atkTotal = 0, atkElim = 0;   // ⚔️ puoliko unitai (siege užskaitymui: bet kuri pusė ≥50%)
       this.state.units.forEach((u) => {
         if (!u.tokenId) return;
-        if (u.team === DEFENDER_TEAM) { defTotal++; if (!u.alive) defElim++; }
-        else { atkTotal++; if (!u.alive) atkElim++; }
+        /* 🏃 08-29: PASITRAUKĘS ≠ AUKA. Išėjus žaidėjui jo unitai nuimami nuo lauko (`alive=false`),
+         * ir anksčiau tai skaitėsi 100% „aukų" ⇒ siege užskaitomas ⇒ kasimo ciklas atsirakindavo ABIEM
+         * NEMOKAMAI. Auka yra tas, kuris KRITO mūšyje (`_rollInjury` davė injured/dead), o ne tas,
+         * kurį savininkas išsivedė. */
+        const _fell = !u.alive && this._battleFates.get(u.id) !== "escaped";
+        if (u.team === DEFENDER_TEAM) { defTotal++; if (_fell) defElim++; }
+        else { atkTotal++; if (_fell) atkElim++; }
       });
       const casualtyPct = defTotal > 0 ? defElim / defTotal : 0;
       const atkCasualtyPct = atkTotal > 0 ? atkElim / atkTotal : 0;
