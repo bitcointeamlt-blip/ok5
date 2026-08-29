@@ -3131,16 +3131,12 @@ export class F9PvpRoom extends Room<F9State> {
      * įdėti tapdavo neįmanoma. Todėl deką IŠSAUGOM visada (tada parašas dengs teisingus tokenus),
      * o blokuojam tik patį DISLOKAVIMĄ. */
     this._decks.set(client.sessionId, newDeck);
-    {
-      const need = await this._authGateShortfall(String(p.address || ""), newDeck);
-      if (need != null) {
-        console.log(`[F9PvpRoom] ✍️🚫 deploy atmestas — ${String(p.address).slice(0, 10)}… trūksta ${need} parašo(-ų)`);
-        try { client.send("deploy_blocked", { reason: "auth", need, target: DEPLOY_AUTH_MIN }); } catch (_) {}
-        try { client.send("burn_auth_state", { have: 0, need, slots: [], tokens: this._burnTokens(client.sessionId), enabled: burnEnabled(), deathPct: DEATH_PCT }); } catch (_) {}
-        return;
-      }
-      if (_seq !== this._setSquadSeq || this.state.players.size > 1) return;   // 🔒 re-check po dar vieno await
-    }
+    /* ✍️ 08-29: ČIA BUVO parašų vartai ant dislokavimo. PAŠALINTA — jie neduoda saugumo, o žalos
+     * pridarė daug: deploy'as būdavo atmetamas tyliai, o atmetus deką pasirašymas dengdavo seną —
+     * žaidėjas likdavo užrakintas be lauko. Ir prasmės nėra: 🛡 SAFE pilis NEPUOLAMA, tad unitai
+     * lauke nerizikuoja niekuo. Sutikimo prašom ten, kur rizika tikra:
+     *   🟢 DUTY jungimas (`duty_set`) · ⚔️ raidas (`_checkRaiderAuth`)
+     * Abi vietos tikrina IR kiekį, IR ar parašai dengia dabartinį deką. */
     // ⚔ 07-06 user: laukas = kiek žaidėjas NORI (battle squad dydis, 1..12) — ne visada 12. Leidžia „palikti tik 1".
     //   msg.active nėra (senas klientas) → MAX_ACTIVE (senas elgesys). Klampinam ir įsimenam sesijai.
     if (msg && msg.active != null) this._activeCount.set(client.sessionId, this._clampActive(msg.active));
