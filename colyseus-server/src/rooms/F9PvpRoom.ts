@@ -1822,12 +1822,18 @@ export class F9PvpRoom extends Room<F9State> {
     //   mandagiai išeik su grobiu" apeidavo rage-quit taisyklę (tik unconsented disconnect'as forfeit'ino).
     //   Legalus pabėgimas SU grobiu = retreat zona (ji baigia match'ą → phase 'ended' → čia jau nebe 'playing').
     //   _handlePlayerOut: bones=0 + _forfeit + kills + _checkWin (kita pusė laimi). Po to _flushBones flush'ina 0.
-    if (this.state.phase === "playing") this._handlePlayerOut(client.sessionId);
+    const _tookOver = this.state.phase === "playing" ? this._handlePlayerOut(client.sessionId) : false;
     // Lobby/ready metu — tiesiog pašalinam. 🦴 Prieš tai — sesijos kaulai į banką (solo home dengia).
     this._flushBones(p);
-    this.state.players.delete(client.sessionId);
-    this._decks.delete(client.sessionId);
-    this._reserves.delete(client.sessionId);   // 🪖 išvalom rezervą
+    /* 🤖 AI PERĖMĖ ⇒ žaidėjo įrašo NETRINAM. Be jo `_rollInjury` nebeatsektų savininko adreso
+     * (`state.players.get(u.owner).address`) ⇒ kritusių unitų mirtys ir sužalojimai NEUŽSIFIKSUOTŲ,
+     * o `_tryReinforce` nustotų leisti rezervą. Sesija jau pažymėta `_forfeit` + `connected=false`;
+     * grįžtantį tą patį adresą sutvarko ghost-cleanup `onJoin`. */
+    if (!_tookOver) {
+      this.state.players.delete(client.sessionId);
+      this._decks.delete(client.sessionId);
+      this._reserves.delete(client.sessionId);   // 🪖 išvalom rezervą
+    }
     if (this.state.phase === "ready" && this.state.players.size < MIN_PLAYERS) {
       this.state.phase = "lobby";
     }
@@ -3187,7 +3193,7 @@ export class F9PvpRoom extends Room<F9State> {
   }
 
   // Žaidėjas iškrito (disconnect/forfeit). FFA: jo unitai miršta; jei lieka ≤1 žaidėjas — mūšis baigtas.
-  private _handlePlayerOut(sid: string) {
+  private _handlePlayerOut(sid: string): boolean {
     // 🏳️ RAGE-QUIT TAISYKLĖ (2026-07-06 user): forfeit'inęs žaidėjas PRARANDA šio mūšio uždirbtus kaulus —
     //   negalima „užmušti priešus ir išjungti žaidimą pasiimant grobį". Unitai NEmiršta papildomai (tikros
     //   mirtys/sužalojimai commit'inami žūties momentu per _rollInjury — atjungimas jų neatšaukia; legalus
@@ -3203,7 +3209,7 @@ export class F9PvpRoom extends Room<F9State> {
       let winnerSid = "";
       this.state.players.forEach((p) => { if (p.sessionId !== sid) winnerSid = p.sessionId; });
       this._endMatch(winnerSid);
-      return;
+      return false;   // C3 relay — perėmimo nėra
     }
     /* 🤖🛡 AI PERĖMIMAS (user 2026-08-29: „jeigu palieku žaidimą, gynyba tęstųsi — tik vietoj manęs
      * perimtų AI"). Iki šiol išėjimas nurašydavo VISUS unitus nuo lauko ⇒ mačas baigdavosi tą sekundę,
@@ -3227,9 +3233,10 @@ export class F9PvpRoom extends Room<F9State> {
         u.cmd = "idle"; u.tx = u.x; u.ty = u.y; u.targetId = "";
         held++;
       });
+      if (qp) (qp as any).connected = false;   // sesija mirusi, bet įrašas lieka (adresas + rezervas)
       console.log(`[F9PvpRoom] 🤖🛡 AI perėmė ${held} unitų (${sid.slice(0, 8)}…) — mūšis tęsiasi be žaidėjo`);
       this._checkWin();   // jei gyvų nebeliko — normali pabaiga; kitaip mūšis eina toliau
-      return;
+      return true;
     }
     // FAZA E: čia mirusiems unitams eis lock/permadeath settlement.
     this._desertPenalty(sid);   // 🏳️💥 PIRMA bausmė (unitai dar alive), TIK TADA nurašom lauką
@@ -3241,6 +3248,7 @@ export class F9PvpRoom extends Room<F9State> {
       u.alive = false;
     });
     this._checkWin();
+    return false;   // senasis kelias: unitai nurašyti, žaidėją galima trinti
   }
 
   /* 🏳️💥 DEZERTYRO BAUSMĖ (2026-08-22, user: „užpuoliau, jis pamatė kad pralaimės ir išjungė žaidimą").
