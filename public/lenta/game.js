@@ -12218,10 +12218,10 @@ async function _f9BurnAuthSign(btn) {
   const setLbl = (t) => { try { if (btn) btn.textContent = t; } catch (_) {} };
   // atšaukus / nepavykus — mygtuką grąžinam veikiantį, kad žaidėjas galėtų bandyti dar kartą
   const reset = () => { try { if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; setLbl('✍ SIGN (' + slots.length + ')'); } } catch (_) {} };
-  if (!slots.length || !tokens.length) { reset(); return; }
+  if (!slots.length || !tokens.length) { reset(); return false; }
   if (!W || typeof W.signBattleAuth !== 'function') {
     try { if (window.showGameNotification) window.showGameNotification('☠️ AUTH', 'This wallet cannot sign the authorization — reconnect and try again', '#e85d5d'); } catch (_) {}
-    reset(); return;
+    reset(); return false;
   }
   const out = [];
   for (let i = 0; i < slots.length; i++) {
@@ -12232,11 +12232,12 @@ async function _f9BurnAuthSign(btn) {
       else break;
     } catch (e) { break; }   // atšaukė / klaida — nebeprašom likusių, siunčiam ką turim
   }
-  if (!out.length) { reset(); return; }
+  if (!out.length) { reset(); return false; }
   try {
     if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('burn_auth_put', { auths: out });
-  } catch (_) {}
+  } catch (_) { reset(); return false; }
   setLbl('✍ saving…');
+  return true;
 }
 /* Unitų meta (utype/level) skydo kortelėms — tas pats šaltinis kaip marketo BROWSE enrichment'e. */
 const _f9ShieldMeta = new Map();
@@ -12262,23 +12263,36 @@ function _f9ShieldLoadMeta(ids) {
 async function _f9SignForBattle() {
   try {
     if (!(window.F9PVP && window.F9PVP.room)) return false;
-    window.F9PVP.room.send("burn_auth_state");
     const t0 = Date.now();
-    while (Date.now() - t0 < 6000) {                       /* laukiam šviežių slots iš serverio */
+    window.F9PVP.room.send("burn_auth_state");
+    /* ⏱️ 08-29 fix: laukiam ŠVIEŽIO serverio atsakymo (`at >= t0`), o NE „kol atsiras slot'ų".
+     * Senoji sąlyga tuo atveju, kai pasirašyti nereikia, prasukdavo visą 6 s ciklą — raidas be
+     * reikalo strigdavo, o pasirašius iš karto po to skaitydavom dar SENĄ būseną. */
+    while (Date.now() - t0 < 6000) {
       const st = window._f9BurnAuth;
-      if (st && Array.isArray(st.slots) && st.slots.length) break;
-      await new Promise((r) => setTimeout(r, 200));
+      if (st && Number(st.at) >= t0) break;
+      await new Promise((r) => setTimeout(r, 120));
     }
     const st = window._f9BurnAuth || {};
+    if (!Number(st.at) || Number(st.at) < t0) return false;   /* serveris neatsakė — geriau neleisti į kovą aklai */
     if (!st.enabled) return true;                          /* deginimas neįjungtas — nėra ko pasirašinėti */
     /* 🕳️ 08-29: ANKSČIAU čia buvo `if (st.have >= 1) return true` — ir pasidaręs naują deką žaidėjas
      * įstrigdavo: parašų turi, tad funkcija tyliai grįždavo „viskas gerai", bet tie parašai nedengė
      * naujų tokenų, vartai neleisdavo, ir popup'as niekada nepasirodydavo. Dabar sprendžia SERVERIS:
      * jei jis atsiuntė slot'ų — vadinasi pasirašyti REIKIA, kad ir kiek jų jau turi. */
     if (!Array.isArray(st.slots) || !st.slots.length) return true;   /* serveris sako — nėra ko pasirašyti */
-    await _f9BurnAuthSign(null);
+    const t1 = Date.now();
+    const sent = await _f9BurnAuthSign(null);
+    if (!sent) return false;                               /* atšaukė piniginėje / nepavyko pasirašyti */
+    /* `burn_auth_put` atsakymas ateina ATSKIRA žinute — palaukiam jos, kitaip `have` dar senas ir
+     * iškart po pasirašymo pakartotas raidas vėl atsimuštų į tuos pačius vartus. */
+    while (Date.now() - t1 < 15000) {
+      const s2 = window._f9BurnAuth;
+      if (s2 && Number(s2.at) >= t1 && s2.saved) break;
+      await new Promise((r) => setTimeout(r, 120));
+    }
     const st2 = window._f9BurnAuth || {};
-    return (st2.have || 0) > 0;
+    return !!st2.saved && (st2.have || 0) > 0;
   } catch (_) { return false; }
 }
 try { window._f9SignForBattle = _f9SignForBattle; } catch (_) {}

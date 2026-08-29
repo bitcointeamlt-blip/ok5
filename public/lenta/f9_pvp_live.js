@@ -1408,6 +1408,7 @@
         tokens: (e && Array.isArray(e.tokens)) ? e.tokens.map(String) : [],
         enabled: !!(e && e.enabled),
         days: (e && Number(e.days)) || 7,
+        saved: !!(e && e.saved),   // ✍️ 08-29: `_f9SignForBattle` laukia BŪTENT šito — patvirtinimo, kad parašai įrašyti
         at: Date.now(),
       };
       if (e && typeof e.deathPct === 'number') window._f9DeathPct = e.deathPct;
@@ -2556,11 +2557,40 @@
     if (!window.F9PVP) { console.error('[F9Live] F9PVP missing'); return; }
     var target = String(targetAddr || '').trim().toLowerCase();
     if (!target) { console.warn('[F9Live] launchRaid: no target'); return; }
-    /* ✍️⚔️ 08-29: ČIA BUVO automatinis pasirašymas prieš raidą, kviečiantis `launchRaid` iš naujo.
-     * ATŠAUKTA — pakartotinis kvietimas tuo pačiu adresu suveikdavo kaip ghost-cleanup ir išmesdavo
-     * PIRMĄJĄ sesiją: mūšis baigdavosi per ~13 s, visi puoliko unitai `escaped`, nė karto nekovoję
-     * (prod įrašas `12:38 ATK 0/0/0/esc12`). Parašai imami ligoninės panelėje (☠️ PERMADEATH AUTH),
-     * o serverio `NEED_AUTH` klientui pasako, ko trūksta. Vieno įėjimo taško laikomės griežtai. */
+    /* ✍️⚔️ PARAŠAS PRIEŠ PUOLIMĄ (08-29, po gyvo incidento: „pasirašiau tx bet kova neįvyko").
+     *
+     * KAS BUVO NE TAIP. Parašų vartai (`NEED_AUTH`) suveikdavo TIK serveryje, o klientas juos
+     * bandydavo atidirbti jau ATMESTAME raide — kai `stop()` buvo palikęs home room'ą, o naujas
+     * join'as žlugęs. `_f9SignForBattle` pirma eilute tikrina `window.F9PVP.room`, tad tuo momentu
+     * jis grįždavo `false` NIEKO nepaklausęs: piniginė parašo neprašydavo, popup'as nepasirodydavo.
+     * Žaidėjas spėdavo sumokėti 10 RONKE fee (jis imamas ANKSČIAU už join'ą) ir likdavo be mūšio.
+     * Realus pėdsakas: paskutinis parašas 13:26 dengė 12 senų tokenų, po 13:39 mūšio jie visi gulė
+     * ligoninėje, naujas dekas (5228,5227,…) — nedengtas nė vieno parašo ⇒ raidas atmestas tyliai.
+     *
+     * KAIP DABAR. Pasirašom ČIA — kol home room dar GYVAS, prieš `stop()` ir prieš mokėjimą.
+     * Eilė žaidėjui: ✍️ parašas (nemokamas, „kelio atgal nebėra") → 💰 10 RONKE → ⚔️ mūšis.
+     * Rekursija saugi: grįžtam PRIEŠ bet kokį šalutinį efektą, o `opts._authed` garantuoja, kad
+     * antras kvietimas į šią šaką nebeįeis (būtent nevaldoma rekursija 08-29 buvo sukėlusi
+     * ghost-cleanup: `12:38 ATK 0/0/0/esc12`). */
+    if (!opts._authed && !_f9AuthRetry && window.F9PVP && window.F9PVP.room && typeof window._f9SignForBattle === 'function') {
+      _f9AuthRetry = true;
+      _status('signing…', '#e8a54a');
+      try { if (window.showGameNotification) window.showGameNotification('✍️ SIGN', 'Sign to send your units into battle — if they die, the NFT burns', '#e8a54a'); } catch (_) {}
+      window._f9SignForBattle().then(function (okSig) {
+        _f9AuthRetry = false;
+        if (!okSig) {
+          _status('raid cancelled', '#f88');
+          try { if (window.showGameNotification) window.showGameNotification('✍️ SIGN', 'Signing cancelled — units stay home, no fee charged', '#e85d5d'); } catch (_) {}
+          return;
+        }
+        opts._authed = true;              // 🔒 vienkartinis — antro rato į šią šaką nebus
+        launchRaid(target, opts);
+      }).catch(function () {
+        _f9AuthRetry = false;
+        _status('sign failed', '#f88');
+      });
+      return;                             // ⛔ dar NIEKO nesustabdėm ir nesumokėjom — grįžtam švariai
+    }
     try { stop(); } catch (_) {}   // paliekam SAVO pilį (home room) prieš puolant svetimą
     on = true; started = false; simInited = false; _ended = false; _mir = {};
     window.__f9HomeActive = false; window.__f9RaidActive = true; window.__f9RaidTarget = target;
@@ -2627,17 +2657,12 @@
          * raidą dėl trūkstamų parašų → pasirašom ČIA PAT ir kartojam raidą. Žaidėjui tai vienas
          * veiksmas: spaudi „Raid" → piniginė klausia → kaunies. Jokios atskiros panelės. */
         else if (em.indexOf('NEED_AUTH') !== -1) {
-          msg = '✍️ Sign to send your units into battle — if they die, the NFT burns.';
-          try {
-            if (window._f9SignForBattle && !_f9AuthRetry) {
-              _f9AuthRetry = true;
-              window._f9SignForBattle().then(function (okSig) {
-                _f9AuthRetry = false;
-                if (okSig) { try { launchRaid(targetAddr); } catch (_) {} }
-                else if (window.showGameNotification) window.showGameNotification('✍️ SIGN', 'Signing cancelled — units stay home', '#e8a54a');
-              }).catch(function () { _f9AuthRetry = false; });
-            }
-          } catch (_) { _f9AuthRetry = false; }
+          /* ✍️ 08-29: normaliu keliu čia nebepatenkam — parašas imamas PRIEŠ raidą, kol home room
+           * gyvas (žr. launchRaid pradžią). Jei vis dėlto patekom, vadinasi room'o tuo momentu nebuvo,
+           * o be jo `_f9SignForBattle` negali nieko paklausti serverio. Todėl NEBEBANDOM pasirašyti
+           * tuščiai (anksčiau tai tyliai grįždavo `false` ir žaidėjas likdavo be jokio popup'o) —
+           * grįžtam namo ir aiškiai pasakom, ką daryti. Fee TX NEsunaudotas, liks kitam bandymui. */
+          msg = '✍️ Signature required — returning to your castle. Press RAID again and sign in your wallet (your 10 RONKE fee is saved, you will not pay twice).';
         }
         else if (em.indexOf('DEFENDER_ONLINE') !== -1) msg = '🫀 Defender is online (reconnecting) — retry in a few seconds to fight them LIVE';
         else if (em.indexOf('RAID_IN_PROGRESS') !== -1) msg = '⚔️ This castle is already under attack — one raider at a time. Try again in a moment.';
