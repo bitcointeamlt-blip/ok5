@@ -819,11 +819,20 @@ export class F9PvpRoom extends Room<F9State> {
           for (let i = 0; i < 8; i++) s += Math.floor(Math.random() * 1e9).toString();
           return s.slice(0, 60).replace(/^0+/, "") || "1";
         };
-        const slots = Array.from({ length: need }, () => ({ battleId: rnd(), nonce: rnd(), deadline }));
+        /* 🕳️ 08-29: vien KIEKIO neužtenka. Pasidaręs naują deką žaidėjas turi senų parašų (have>0 ⇒
+         * need=0 ⇒ slots tušti), bet jie nedengia naujų tokenų: vartai neleidžia, o pasirašyti nėra ko —
+         * mygtukas neatsiranda, popup'as nepasirodo, ir žaidėjas įstringa. Jei dabartinis dekas
+         * nepadengtas, siūlom bent vieną slot'ą, kad jį būtų galima uždengti. */
+        let _need = need;
+        try {
+          const _unc = await burnAuthUncovered(addr, this._burnTokens(client.sessionId));
+          if (_unc.length && _need < 1) _need = 1;
+        } catch (_) {}
+        const slots = Array.from({ length: _need }, () => ({ battleId: rnd(), nonce: rnd(), deadline }));
         /* 🔑 tokenId sąrašą duoda SERVERIS, ne klientas: parašas galioja tik tiems tokenams, kurie jame
          * išvardyti, tad jei klientas praleistų kad ir vieną — to unito mirties momentu tinkamo parašo
          * nebūtų ir NFT nesudegtų. Imam visą deką (laukas + rezervas). */
-        client.send("burn_auth_state", { have, need, slots, tokens: this._burnTokens(client.sessionId), enabled: burnEnabled(), days: BURN_AUTH_DAYS, deathPct: DEATH_PCT });
+        client.send("burn_auth_state", { have, need: _need, slots, tokens: this._burnTokens(client.sessionId), enabled: burnEnabled(), days: BURN_AUTH_DAYS, deathPct: DEATH_PCT });
       } catch (_) { try { client.send("burn_auth_state", { have: 0, need: 0, slots: [], tokens: [], enabled: burnEnabled(), deathPct: DEATH_PCT }); } catch (_2) {} }
     });
     this.onMessage("burn_auth_put", async (client, m: any) => {

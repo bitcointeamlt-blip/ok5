@@ -12271,8 +12271,11 @@ async function _f9SignForBattle() {
     }
     const st = window._f9BurnAuth || {};
     if (!st.enabled) return true;                          /* deginimas neįjungtas — nėra ko pasirašinėti */
-    if ((st.have || 0) >= 1) return true;                  /* jau turim — vartams užtenka vieno */
-    if (!Array.isArray(st.slots) || !st.slots.length) return true;   /* nėra ko pasirašyti — nestabdom */
+    /* 🕳️ 08-29: ANKSČIAU čia buvo `if (st.have >= 1) return true` — ir pasidaręs naują deką žaidėjas
+     * įstrigdavo: parašų turi, tad funkcija tyliai grįždavo „viskas gerai", bet tie parašai nedengė
+     * naujų tokenų, vartai neleisdavo, ir popup'as niekada nepasirodydavo. Dabar sprendžia SERVERIS:
+     * jei jis atsiuntė slot'ų — vadinasi pasirašyti REIKIA, kad ir kiek jų jau turi. */
+    if (!Array.isArray(st.slots) || !st.slots.length) return true;   /* serveris sako — nėra ko pasirašyti */
     await _f9BurnAuthSign(null);
     const st2 = window._f9BurnAuth || {};
     return (st2.have || 0) > 0;
