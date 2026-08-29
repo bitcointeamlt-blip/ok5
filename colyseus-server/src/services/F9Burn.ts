@@ -78,7 +78,15 @@ async function _send(addr: string, batch: string[], auth: BurnAuth): Promise<str
   try {
     const r = await fetch(URL(), {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-f9-secret": SECRET() },
+      /* 🔐 08-29: pridedam `Authorization`, kad veiktų ir tada, kai edge funkcija deployinta su ĮJUNGTU
+       * „Verify JWT" (numatyta Supabase redaktoriuje). Be jo Supabase atmeta dar nepasiekus mūsų kodo:
+       * `401 UNAUTHORIZED_NO_AUTH_HEADER`, ir NFT nesudegtų, nors viskas kita teisinga.
+       * Tikroji autentikacija lieka `x-f9-secret` — JWT čia tik vartai iki funkcijos. */
+      headers: {
+        "Content-Type": "application/json",
+        "x-f9-secret": SECRET(),
+        ...(process.env.SUPABASE_SERVICE_ROLE_KEY ? { Authorization: "Bearer " + process.env.SUPABASE_SERVICE_ROLE_KEY } : {}),
+      },
       body: JSON.stringify({
         owner: addr,
         tokenIdsToBurn: batch,
