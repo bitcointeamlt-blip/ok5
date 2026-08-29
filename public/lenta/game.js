@@ -12132,6 +12132,12 @@ function _f9HospRenderShield() {
   const home = !!(window.__f9HomeActive && window._f9InstaReady);
   if (!all.length || !home) { box.innerHTML = ''; return; }
   const unprot = all.filter((id) => !shield.has(id));
+  /* 🪽 08-29 FIX: skaitiklis rodydavo `shield.size` — VISUS žaidėjo skydus, kad ir kur jie būtų —
+   * o vardiklis buvo tik šio deko dydis. Uždėjus skydą ir vėliau išėmus tą unitą iš deko, antraštė
+   * skelbdavo „1/30 protected", nors realiai apsaugotų buvo 0 (mygtukas teisingai prašė 30, ne 29).
+   * Su tikra mirtimi tai reiškia, kad žaidėjas manosi padengtas, kai nėra. Skaičiuojam TIK šį deką. */
+  const protectedHere = all.length - unprot.length;
+  const stuck = shield.size - protectedHere;   // skydai ant unitų, kurių deke nebėra — BLESS įstrigęs
   const cost = Math.min(unprot.length, bal);
   /* 💀 REALI mirties rizika iš serverio. Kai ji 0 — skydas saugo nuo NIEKO, tad BLESS leisti neduodam
    * (08-21 user taisyklė: mirtis 10%, o kol jungiklis išjungtas, žaidėjas neturi pirkti apsaugos veltui). */
@@ -12141,7 +12147,8 @@ function _f9HospRenderShield() {
     '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #3a3a55;' + (risky ? '' : 'opacity:.62;') + '">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;">' +
         _f9WingsIco(15, 'margin-right:1px;') +
-        '<span style="font-size:' + (risky ? '9' : '10') + 'px;color:#aef0f7;letter-spacing:' + (risky ? '0.5' : '1') + 'px;flex:1;min-width:0;">DEATH SHIELD · ' + shield.size + '/' + all.length + ' protected</span>' +
+        '<span style="font-size:' + (risky ? '9' : '10') + 'px;color:#aef0f7;letter-spacing:' + (risky ? '0.5' : '1') + 'px;flex:1;min-width:0;">DEATH SHIELD · ' + protectedHere + '/' + all.length + ' protected'
+          + (stuck > 0 ? '<span style="color:#e8a54a;"> · ' + stuck + ' on units not in your deck</span>' : '') + '</span>' +
         (risky ? '<span style="font-size:8px;color:#e85d5d;padding:3px 6px;background:rgba(232,93,93,0.12);border:1px solid #7a2a2a;border-radius:4px;white-space:nowrap;" title="Chance that a unit which falls in battle dies for good instead of going to hospital.">' + deathPct + '% death risk</span>' : '') +
         (!risky
           ? '<span style="font-size:8px;color:#8a9aaa;" title="Right now a fallen unit always goes to the hospital — nothing to shield against, so BLESS would be wasted.">death is OFF</span>'
@@ -12413,6 +12420,15 @@ function _f9HospRebuild() {
         const W = window.Wallet, BN = window.BarracksNFT;
         const a = (W && W.getAddress && W.getAddress()) || '';
         if (a && BN && BN.getDeck) deckLen = (BN.getDeck(a) || []).length;
+      } catch (_) {}
+      /* 🃏 08-29 FIX: `BN.getDeck` yra LOKALI kliento kopija, o į mūšį serveris veda on-chain
+       * registruotą deką. Dėl to eilutė prieštaraudavo pati sau: „DECK 21", o šalia 🟢12 + ✅18 = 30.
+       * Su tikra mirtimi žaidėjas pagal šitą skaičių sprendžia, kiek unitų rizikuoja, tad rodom
+       * SERVERIO tiesą (laukas + rezervas + ligoninė), o lokalų kešą paliekam tik fallback'ui. */
+      try {
+        const _f = (window._f9OnField instanceof Set) ? window._f9OnField.size : -1;
+        const _r = (window._f9Reserve instanceof Set) ? window._f9Reserve.size : -1;
+        if (_f >= 0 && _r >= 0) deckLen = _f + _r + ((list && list.length) || 0);
       } catch (_) {}
       const cem = window._f9Cemetery || {};
       const cap = Math.min(30, 12 + (cem.rv || 0));
