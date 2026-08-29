@@ -478,7 +478,7 @@
   }
   function _deckKey(addr) { return 'f12_deck_' + String(addr || '').toLowerCase(); }
   function getDeck(addr) {
-    try { const r = JSON.parse(localStorage.getItem(_deckKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    try { const r = JSON.parse(localStorage.getItem(_deckKey(addr)) || '[]'); return Array.isArray(r) ? _dropDead(r.map(String)) : []; }
     catch (_) { return []; }
   }
   function setDeck(addr, ids) {
@@ -573,7 +573,7 @@
   const _BATTLE_SQUAD_MAX = 12;
   function _squadKey(addr) { return 'f12_squad_' + String(addr || '').toLowerCase(); }
   function getBattleSquad(addr) {
-    try { const r = JSON.parse(localStorage.getItem(_squadKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    try { const r = JSON.parse(localStorage.getItem(_squadKey(addr)) || '[]'); return Array.isArray(r) ? _dropDead(r.map(String)) : []; }
     catch (_) { return []; }
   }
   function setBattleSquad(addr, ids) {
@@ -608,8 +608,21 @@
   // rodo „REGISTER" (pakeista) arba „START BATTLE" (užregistruota). Squad keitimas NEįtakoja
   // (squad lokalus), tik deko narystės keitimas → reikia perregistruoti.
   function _regKey(addr) { return 'f12_deckreg_' + String(addr || '').toLowerCase(); }
+  /* 💀 08-29 (user: „sudeginti unitai turėtų dingti ir iš deko, ir iš deploy sekcijos, tokia pat
+   * logika kaip ball žaidime"). Registruotas dekas po deginimo NEsikeičia — kontraktas apie sudegusį
+   * tokeną nežino ir toliau jį vardija. Todėl dekas rodė 12/13, sudegęs unitas atrodė gyvas, o
+   * kovinio būrio skaičiavimas duodavo 5/12 ir blokuodavo kasimą.
+   * Žuvusiuosius atsiunčia serveris (`hospital.dead` → `window._f9DeadUnits`) — braukiam juos ČIA,
+   * viename taške, kad išnyktų visur, kur dekas naudojamas. */
+  function _dropDead(ids) {
+    try {
+      const d = window._f9DeadUnits;
+      if (!(d instanceof Set) || !d.size) return ids;
+      return ids.filter(function (t) { return !d.has(String(t)); });
+    } catch (_) { return ids; }
+  }
   function getRegisteredDeck(addr) {
-    try { const r = JSON.parse(localStorage.getItem(_regKey(addr)) || '[]'); return Array.isArray(r) ? r.map(String) : []; }
+    try { const r = JSON.parse(localStorage.getItem(_regKey(addr)) || '[]'); return Array.isArray(r) ? _dropDead(r.map(String)) : []; }
     catch (_) { return []; }
   }
   function setRegisteredDeck(addr, ids) {

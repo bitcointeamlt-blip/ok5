@@ -2244,7 +2244,13 @@ export class F9PvpRoom extends Room<F9State> {
     // 🪽 shield = tokenId sąrašas, ant kurių uždėtas BLESS (kortelių ženkliukams)
     /* 💀 deathPct — REALI mirties tikimybė (0 = taisyklė išjungta). Klientas privalo ją žinoti: kitaip
      * DEATH SHIELD siūlytų pirkti apsaugą nuo rizikos, kurios tuo metu išvis nėra. */
-    return { list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady, shield: [...(this._shield.get(addr) || [])], deathPct: DEATH_PCT, burnOn: burnEnabled() };
+    /* 💀 08-29 (user: „sudeginti unitai turėtų dingti ir iš deko, ir iš deploy sekcijos, tokia pat
+     * logika kaip ball žaidime"). Klientas iki šiol mirusius žinojo TIK iš marketo `dead_check`, o
+     * deko/deploy sąrašus statė iš on-chain registruoto deko — o tas po deginimo lieka nepakitęs ir
+     * toliau rodo sudegusį tokeną (prod: dekas 12/13, skull „gyvas", laukas 5/12).
+     * Siunčiam ŠIO žaidėjo mirusiuosius, kad klientas galėtų juos išbraukti visur. */
+    const _deadOwn = [...this._deadSet(addr)];
+    return { dead: _deadOwn, list, now, healMs: this._hospHealMs(_lvl), ready, hospLevel: _lvl, slots: this._hospSlots(_lvl), onField: onFieldArr, reserve: reserveArr, stale, instaReady, shield: [...(this._shield.get(addr) || [])], deathPct: DEATH_PCT, burnOn: burnEnabled() };
   }
 
   // ⚔️ DEPLOY (07-04 user mechanika): paruošti (pasveikę/nespawninti) deko unitai → garnizono 2×6 slotai.

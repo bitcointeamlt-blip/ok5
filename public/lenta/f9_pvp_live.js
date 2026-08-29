@@ -1369,6 +1369,13 @@
     //   eta = serverio epoch → normalizuojam į kliento laikrodį (etaLocal) offset'u.
     room.onMessage('hospital', function (e) {
       var recv = Date.now();
+      /* 💀 08-29: serveris atsiunčia ŠIO žaidėjo žuvusius. Registruotas on-chain dekas po deginimo
+       * lieka nepakitęs ir toliau vardija sudegusį tokeną, tad be šito dekas rodė 12/13, sudegęs
+       * unitas atrodė gyvas, o laukas skaičiavosi 5/12. Įrašom, kad dekas ir deploy juos išbrauktų. */
+      if (e && Array.isArray(e.dead) && e.dead.length) {
+        window._f9DeadUnits = window._f9DeadUnits instanceof Set ? window._f9DeadUnits : new Set();
+        e.dead.forEach(function (t) { window._f9DeadUnits.add(String(t)); });
+      }
       var list = (e && Array.isArray(e.list)) ? e.list : [];
       var off = (e && e.now) ? (recv - e.now) : 0;
       list.forEach(function (i) { i.etaLocal = (i.eta || 0) + off; });
