@@ -626,6 +626,20 @@ export class F9PvpRoom extends Room<F9State> {
     if (!s) { s = new Set(); this._burnQ.set(a, s); }
     s.add(String(tokenId));
     if (this._burnT) return;
+    /* 🔥1️⃣ VIENAS MŪŠIS = VIENAS PARAŠAS (2026-08-29, po `match_jG6Z9avdI`: žuvo 4 NFT, sudegė tik 2).
+     *
+     * `BURN_BATCH_MS` langas skaičiuojamas nuo PIRMOS žūties ir nebeatnaujinamas, tad ilgesniame mūšyje
+     * aukos susiskaido į kelis flush'us. Kiekvienas flush'as suvalgo ATSKIRĄ parašą — kontrakte
+     * `usedBurnNonces`, vienas parašas = vienas burn TX. Turint viena galiojantį parašą, pirmas flush'as
+     * sudegina savo dalį, o antrajam `burnAuthTake` grąžina null: unitas žaidime miręs, o NFT lieka
+     * piniginėje. Būtent ta trečia būsena, kurios neturi būti.
+     *
+     * Mūšiui VYKSTANT deginimo neskubinam — mirtis jau įrašyta į globalų registrą (`_recordDeath`),
+     * tad niekas nedingsta, o eilę garantuotai ištuština `_endMatch` ir `onDispose`. Taip visos vieno
+     * mūšio aukos sueina į VIENĄ TX ir joms užtenka VIENO parašo.
+     * Ne mūšio metu (kambarys jau `ended`/`lobby`) senasis taimeris lieka — ten pabaigos įvykio
+     * gali ir nebebūti, tad geriau deginti pagal laikrodį. */
+    if (this.state.phase === "playing") return;
     this._burnT = setTimeout(() => { this._burnT = null; void this._burnFlush(); }, BURN_BATCH_MS);
   }
   private async _burnFlush(): Promise<void> {

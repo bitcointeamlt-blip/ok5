@@ -2518,8 +2518,31 @@
     if (_rcBadge && _rcBadge.parentNode) _rcBadge.parentNode.removeChild(_rcBadge);
     _rcBadge = null;
   }
+  /* 🫀⚔️ KEEPALIVE IŠ BET KURIOS BŪSENOS (08-29 fix; gyvas incidentas: „kova nutrūko, o aš dalyvavau
+   * gyvai", `match_jG6Z9avdI` — atkEscaped 5, mūšis mirė 3-ią minutę).
+   *
+   * Serverio seat-reaper uždaro socket'ą po `CLIENT_SILENT_MS` (150 s) tylos, o `_clientSeen`
+   * atnaujina TIK `ping`, `cmd` ir join. Šis watchdog'as buvo VIENINTELIS `ping` siuntėjas visame
+   * kliente — ir per raidą jis išeidavo pačia pirma eilute (`__f9RaidActive` ⇒ `return`). Vadinasi
+   * puolikas ping'ų nesiuntė NIEKADA: gyvas jį laikė tik unitų komandos. Kai unitai jau susikibę ir
+   * klikinti nebereikia, 150 s tylos ateina savaime ⇒ `cl.leave(4002)` ⇒ `_handlePlayerOut` ⇒ likę
+   * unitai `escaped`, mūšis baigtas, gynėjas laimi be kovos. Gynėjo tai nelietė — jis savo pilyje,
+   * kur `__f9HomeActive` true, tad ping'ai ėjo.
+   *
+   * Ping'as = viena maža žinutė kas 20 s (7,5× dažniau nei reaper riba), tad siunčiam visada, kol
+   * tik yra gyvas kambarys. Baneriai ir auto-reconnect LIEKA tik namų režimui — raide `relaunchHome`
+   * reikštų puolimo nutraukimą, o būtent to ir vengiam. */
+  function _rcKeepalive() {
+    try {
+      var N = window.F9PVP;
+      if (!N || !N.room || !N.connected) return;
+      var now = Date.now();
+      if (now - _rcLastPing > 20000) { _rcLastPing = now; N.ping(); }
+    } catch (_) {}
+  }
   setInterval(function () {
     try {
+      _rcKeepalive();   // 🫀 PIRMA ir besąlygiškai — nesvarbu, savo pilyje ar puolant svetimą
       if (!window.__f9HomeActive || window.__f9RaidActive) {
         if (!window._f9HomeRelaunchPending) { _rcWasAlive = false; _rcHide(); }
         _rcBadgeSet(window.__f9RaidActive ? (window.F9PVP && window.F9PVP.room ? 'on' : 'connecting') : null);
@@ -2536,7 +2559,6 @@
           return;
         }
         _rcWasAlive = true; _rcHide(); _rcBadgeSet('on');
-        if (now - _rcLastPing > 20000) { _rcLastPing = now; try { N.ping(); } catch (_) {} }   // 🫀 keepalive
         return;
       }
       if (!_rcWasAlive) { _rcBadgeSet('connecting'); return; }   // dar tik jungiamasi (boot)
