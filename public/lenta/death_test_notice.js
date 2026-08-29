@@ -1,15 +1,18 @@
-/* ⚠️ GYVO MIRTIES TESTO ĮSPĖJIMAS (2026-08-29, user).
+/* ⚠️ MIRTIES TAISYKLĖS ĮSPĖJIMAS (2026-08-29, user).
  *
- * Trumpa juosta viršuje: unitų mirties testas vyksta, geriau palaukti. Uždaroma ×, pasirinkimas
- * įsimenamas (localStorage) — žaidėjui juosta rodoma vieną kartą, ne kas perkrovimą.
+ * Trumpa juosta viršuje: PvP mūšyje kritęs unitas turi 10% šansą žūti negrįžtamai, o apsauga — BLESS,
+ * kuris generuojasi kas 24 h ligoninėje.
  *
- * Tekstas ANGLIŠKAS (žaidimo UI taisyklė). Trumpai ir be dramos: kas vyksta, ką daryti, kaip būti saugiam.
- * Nuimti — ištrink šitą failą iš `index.html` (arba pakeisk KEY, jei norisi parodyti iš naujo).
+ * Rodoma KAS KARTĄ pirmą kartą įjungus žaidimą: uždarymas įsimenamas `sessionStorage`, ne `localStorage`,
+ * tad per tą patį seansą juosta nebekyšo, o kitą kartą atsidarius žaidimą — vėl primena.
+ *
+ * Tekstas ANGLIŠKAS (žaidimo UI taisyklė). KISS: viena juosta, vienas ×, jokių būsenų.
+ * Nuimti — ištrink šitą failą iš `index.html`.
  */
 (function () {
   'use strict';
-  var KEY = 'f9_death_test_notice_20260829';
-  try { if (localStorage.getItem(KEY) === 'x') return; } catch (_) {}
+  var KEY = 'f9_death_notice_seen';
+  try { if (sessionStorage.getItem(KEY) === 'x') return; } catch (_) {}
 
   function build() {
     if (document.getElementById('f9-death-notice')) return;
@@ -24,9 +27,10 @@
       'box-shadow:0 2px 14px rgba(0,0,0,0.5)',
     ].join(';');
     bar.innerHTML =
-      '<span style="color:#ff8a88;">⚠ LIVE TEST</span> — unit death is being tested: units can be lost permanently. '
-      + 'We recommend not playing until testing is finished — watch for the next announcement. '
-      + '<span style="color:#8fd47c;">To stay safe: use SAFE mining, or keep your units out of the castle.</span>';
+      '<span style="color:#ff8a88;">⚠ PERMADEATH</span> — in PvP matches a fallen unit has a '
+      + '<span style="color:#ff8a88;">10% chance to die for good</span> and its NFT is burned. '
+      + '<span style="color:#8fd47c;">Put BLESS on a unit and it goes to the hospital instead.</span> '
+      + 'You get free BLESS every 24h in the Hospital.';
 
     var x = document.createElement('button');
     x.textContent = '×';
@@ -37,7 +41,7 @@
       'line-height:1', 'cursor:pointer', 'font-family:inherit', 'padding:2px 6px',
     ].join(';');
     x.onclick = function () {
-      try { localStorage.setItem(KEY, 'x'); } catch (_) {}
+      try { sessionStorage.setItem(KEY, 'x'); } catch (_) {}
       if (bar.parentNode) bar.parentNode.removeChild(bar);
     };
     bar.appendChild(x);
