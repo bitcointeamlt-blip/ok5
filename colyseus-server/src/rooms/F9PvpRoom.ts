@@ -3,7 +3,7 @@ import { F9State, F9Player, F9Unit, F9Wall } from "../schema/F9State";
 import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
 import { bakRecord, healStructures } from "../services/BaseBackup";
-import { burnAuthAdd, burnAuthCount, BURN_AUTH_TARGET, BURN_AUTH_DAYS } from "../services/F9BurnAuth";   // 🔥📜 iš anksto pasirašytos burn autorizacijos
+import { burnAuthAdd, burnAuthCount, burnAuthUncovered, BURN_AUTH_TARGET, BURN_AUTH_DAYS } from "../services/F9BurnAuth";   // 🔥📜 iš anksto pasirašytos burn autorizacijos
 import { burnDeadUnits, burnEnabled } from "../services/F9Burn";                                          // 🔥 NFT deginimas mirties momentu
 import { deadAdd, deadAll, deadEnsure, deadFlushPending } from "../services/DeadRegistry";                // 💀🌍 miręs tokenas miręs VISIEMS (ne tik savininkui)
 import { deathProtected, deathGuardNote, deathGuardBanner, sandboxToken } from "../services/DeathGuard";   // 💀🛡 lokalus serveris nemarina TIKRŲ NFT
@@ -3438,7 +3438,16 @@ export class F9PvpRoom extends Room<F9State> {
     if (!hasNft) return null;                       // nemokami unitai — nėra ką deginti
     try {
       const have = await burnAuthCount(a);
-      return have >= need ? null : need - have;
+      if (have < need) return need - have;
+      /* 🕳️ Kiekio NEUŽTENKA: parašas dengia tik jame išvardytus tokenus. Pakeitęs deką žaidėjas
+       * praeitų vartus su senais parašais, o naujų unitų mirtis liktų nesudeginta. Tikrinam, ar
+       * DABARTINĮ deką dengia bent vienas galiojantis parašas. */
+      const uncovered = await burnAuthUncovered(a, deck.map((d) => String(d.tokenId || "")));
+      if (uncovered.length) {
+        console.log(`[F9PvpRoom] ✍️🕳️ ${a.slice(0, 10)}… parašai nedengia ${uncovered.length} deko unitų (${uncovered.slice(0, 4).join(",")}…) — reikia pasirašyti iš naujo`);
+        return uncovered.length;
+      }
+      return null;
     } catch (_) { return null; }                    // fail-open
   }
   /* ✍️🚪 Puolikas irgi privalo turėti parašus — jis online, tad prašyti galima čia pat. Be šito

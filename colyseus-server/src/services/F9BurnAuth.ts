@@ -86,6 +86,26 @@ export async function burnAuthCount(addr: string): Promise<number> {
   } catch (_) { return 0; }
 }
 
+/* 🕳️ 2026-08-29 (user: „jei pakeisiu deką ir einu į kovas, mano unitai tampa nemirtingi — išvengiu
+ * atsakomybės"). Parašas galioja TIK jame išvardytiems tokenams (`burnAuthTake` renka pagal
+ * `tokens.includes(id)`). Įdėjus į deką naują NFT, senuose parašuose jo nėra ⇒ mirties momentu
+ * tinkamo parašo nerandama ⇒ unitas žaidime miršta, o NFT lieka piniginėje. Būtent ta trečia būsena,
+ * kurios neturi būti.
+ * Grąžina tokenus, kurių NEDENGIA nė vienas galiojantis parašas — vartai pagal tai gali pareikalauti
+ * pasirašyti iš naujo. Triktis → tuščias sąrašas (fail-open: DB gedimas nepalieka žaidėjo be pilies). */
+export async function burnAuthUncovered(addr: string, tokenIds: string[]): Promise<string[]> {
+  const ids = (tokenIds || []).map((t) => String(t || "")).filter((t) => t && !/^dev/i.test(t));
+  if (!ids.length) return [];
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const valid = (await _read(_norm(addr))).auths.filter((a) => a.deadline > now);
+    if (!valid.length) return ids;
+    const covered = new Set<string>();
+    for (const a of valid) for (const t of a.tokens || []) covered.add(String(t));
+    return ids.filter((t) => !covered.has(t));
+  } catch (_) { return []; }
+}
+
 // Prideda naujus parašus (dedant būrį į lauką). Grąžina, kiek dabar baseine.
 export async function burnAuthAdd(addr: string, list: any[]): Promise<number> {
   const a = _norm(addr);
