@@ -2499,6 +2499,8 @@
     } catch (_) {}
   }, 3000);
 
+  /* ✍️ 08-29: sargas nuo begalinio ciklo — pasirašius kartojam raidą TIK vieną kartą. */
+  var _f9AuthRetry = false;
   // 🗡️ RAID — puolam KITO žaidėjo pilį (LIVE). Užkraunam MŪSŲ deck'ą, jungiamės kaip puolikas į
   //    taikinio kambarį (filterBy owner). Taikinys offline / nėra kambario → raidPlayer null (vėliau=async).
   function launchRaid(targetAddr, opts) {
@@ -2567,6 +2569,25 @@
         else if (em.indexOf('RAID_COOLDOWN') !== -1) msg = '⏲ You raided this castle recently — wait ' + (em.split(':')[1] || '?') + ' min';
         else if (em.indexOf('NO_DEFENDERS') !== -1) msg = '💤 Castle inactive — no combat-ready NFT defenders to raid';
         else if (em.indexOf('WEAK_SQUAD') !== -1) msg = '🪖 Your squad is too small — you need ' + (em.split(':')[2] || 12) + ' combat-ready units to raid (you have ' + (em.split(':')[1] || '?') + '). Heal or deploy more.';
+        /* ✍️ 08-29: parašų vartai. Anksčiau „SIGN" mygtukas gyveno TIK ligoninės panelėje, tad žaidėjas
+         * apie jį nežinodavo ir raidas tiesiog neprasidėdavo be paaiškinimo. Dabar pasakom, ko trūksta,
+         * IR atidarom ligoninę su parašų sekcija — kitaip vartai atrodytų kaip lūžis. */
+        /* ✍️⚔️ 08-29 (user: „lygiai kaip ball žaidime"): parašas = mūšio pradžia. Serveris atmetė
+         * raidą dėl trūkstamų parašų → pasirašom ČIA PAT ir kartojam raidą. Žaidėjui tai vienas
+         * veiksmas: spaudi „Raid" → piniginė klausia → kaunies. Jokios atskiros panelės. */
+        else if (em.indexOf('NEED_AUTH') !== -1) {
+          msg = '✍️ Sign to send your units into battle — if they die, the NFT burns.';
+          try {
+            if (window._f9SignForBattle && !_f9AuthRetry) {
+              _f9AuthRetry = true;
+              window._f9SignForBattle().then(function (okSig) {
+                _f9AuthRetry = false;
+                if (okSig) { try { launchRaid(targetAddr); } catch (_) {} }
+                else if (window.showGameNotification) window.showGameNotification('✍️ SIGN', 'Signing cancelled — units stay home', '#e8a54a');
+              }).catch(function () { _f9AuthRetry = false; });
+            }
+          } catch (_) { _f9AuthRetry = false; }
+        }
         else if (em.indexOf('DEFENDER_ONLINE') !== -1) msg = '🫀 Defender is online (reconnecting) — retry in a few seconds to fight them LIVE';
         else if (em.indexOf('RAID_IN_PROGRESS') !== -1) msg = '⚔️ This castle is already under attack — one raider at a time. Try again in a moment.';
         else if (em.indexOf('SAFE_MODE') !== -1) msg = '🛡 This castle is in SAFE mode — protected after a battle (they must switch back to ON DUTY to be raidable).';

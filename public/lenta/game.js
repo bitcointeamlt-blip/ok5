@@ -12248,6 +12248,29 @@ function _f9ShieldLoadMeta(ids) {
     }).catch(function () { _f9ShieldMetaBusy = false; });
   } catch (_) { _f9ShieldMetaBusy = false; }
 }
+/* ✍️⚔️ 08-29 (user: „lygiai kaip ball žaidime"): parašas yra MŪŠIO PRADŽIA, ne pasirinkimas panelėje.
+ * Ball žaidime „Start Battle" → piniginė pasirašo → kaunies. Čia taip pat: spaudi „Raid", serveris
+ * atmeta su NEED_AUTH, ir mes iškart paleidžiam pasirašymą — žaidėjui tai atrodo kaip vienas veiksmas.
+ * Grąžina true, kai parašai surinkti ir raidą galima kartoti. */
+async function _f9SignForBattle() {
+  try {
+    if (!(window.F9PVP && window.F9PVP.room)) return false;
+    window.F9PVP.room.send("burn_auth_state");
+    const t0 = Date.now();
+    while (Date.now() - t0 < 6000) {                       /* laukiam šviežių slots iš serverio */
+      const st = window._f9BurnAuth;
+      if (st && Array.isArray(st.slots) && st.slots.length) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const st = window._f9BurnAuth || {};
+    if (!st.enabled) return true;                          /* deginimas neįjungtas — nėra ko pasirašinėti */
+    if (!Array.isArray(st.slots) || !st.slots.length) return false;
+    await _f9BurnAuthSign(null);
+    const st2 = window._f9BurnAuth || {};
+    return (st2.have || 0) > (st.have || 0);
+  } catch (_) { return false; }
+}
+try { window._f9SignForBattle = _f9SignForBattle; } catch (_) {}
 function _f9HospShieldSend(ids) {
   try {
     if (!ids || !ids.length) return;
@@ -12479,6 +12502,8 @@ function _f9CloseHospitalPanel() {
   else if (_f9HospPanelEl && _f9HospPanelEl.parentNode) _f9HospPanelEl.parentNode.removeChild(_f9HospPanelEl);
   _f9HospOverlayEl = null; _f9HospPanelEl = null; _f9HospSig = '';
 }
+/* ✍️ 08-29: išnešam į `window`, kad raido atmetimas dėl trūkstamų parašų (NEED_AUTH) galėtų atidaryti
+ * ligoninę su „SIGN" sekcija. Be šito žaidėjas matytų tik klaidą ir neturėtų kur pasirašyti. */
 function _f9ToggleHospitalPanel() {
   if (_f9HospPanelEl) { _f9CloseHospitalPanel(); return; }
   try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('hospital_get'); } catch (_) {}   // šviežia eilė
@@ -12576,6 +12601,7 @@ function _f9ToggleHospitalPanel() {
   _f9HospPanelTimer = setInterval(_f9HospUpdateStatus, 500);
   _f9HospAnimTimer = setInterval(_f9HospDrawSprites, 140);
 }
+try { window._f9ToggleHospitalPanel = _f9ToggleHospitalPanel; } catch (_) {}   // ✍️ 08-29: NEED_AUTH atidaro ligoninę su parašų sekcija
 
 let _f9TpPadImg = null;   // 🌀 user portalo pado sprite (07-03, rembg cutout iš TP.png)
 function _f9DrawTpPads() {
