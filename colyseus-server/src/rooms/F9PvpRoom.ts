@@ -2618,8 +2618,19 @@ export class F9PvpRoom extends Room<F9State> {
     const dead = this._deadSet(addr);
     const cd = chainDeckCached(addr);                             // 🔐 parduoti/išregistruoti nesiskaito (kaip _injuredDrain)
     let n = 0;
-    for (const id of snap) { if (!id || inj.has(id) || dead.has(id)) continue; if (cd && cd.size > 0 && !cd.has(id)) continue; n++; }
-    return Math.max(live, Math.min(MAX_ACTIVE, n));
+    /* 🚫 08-26 auditas: `dev…` unitai čia NEBUVO filtruojami, nors `_fieldCounts` (online kelias) juos
+     * išmeta nuo 08-20. Per tą skylę piniginė su ≥69 Barracks, bet NIEKO neregistravusi, galėjo statyti
+     * 12 nemokamų unitų ir kasti offline pilnu tempu. Kanonas: dev unitai nesiskaito NIEKUR. */
+    for (const id of snap) {
+      if (!id || /^dev/i.test(id) || inj.has(id) || dead.has(id)) continue;
+      if (cd && cd.size > 0 && !cd.has(id)) continue;
+      n++;
+    }
+    /* 🐞 08-26 auditas: buvo `Math.max(live, …)`, ir tas `live` (pasenęs `c.mfield`, offline paprastai 12)
+     * PANAIKINDAVO sužalotų/žuvusių atėmimą: po raido pilis su 8 gynėjais kasdavo kaip su 12, kol
+     * savininkas neprisijungdavo. Snapshot'as jau užkrautas ⇒ jis ir yra tiesa; `live` lieka tik
+     * fallback'u aukščiau, kai snapshot'o dar nežinom. */
+    return Math.min(MAX_ACTIVE, n);
   }
   // Offline-safe rate — iš paskutinių ŽINOMŲ (persistintų/snapshot) lauko/rezervo count'ų.
   private _mineRateStored(addr: string): number {
