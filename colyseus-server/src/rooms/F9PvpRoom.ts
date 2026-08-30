@@ -299,10 +299,14 @@ const RAID_FIELD_REQ = Number(process.env.F9_RAID_FIELD_REQ) || MINE_FIELD_REQ_A
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
 // 🏁 07-15 (user): VIENODAS FLAT rate visiems eligible — SAFE 5/h, DUTY 10/h, + RONKE Power bonusas.
 //   (Pakeičia lauko-frakcija × success × dutyMult modelį; DUTY 10 == senas PILNO lauko rate.)
-/* ⛏️💰 2026-08-30 EKONOMIKOS PERTVARKA (user sprendimas). Mirtis gyva, tad rizika turi būti apmokėta:
- *   DUTY bazė 10 → 20/h · SAFE ciklas 200 → 300 · withdraw 500 → 1000 · vagystė 50% → 30% (+5% sudega)
+/* ⛏️💰 2026-08-30 EKONOMIKOS PERTVARKA (user sprendimas, galutinė v3).
+ * Mirtis gyva, tad rizika turi būti apmokėta — bet NE visiems flat'u, o tam, kas už tai sumoka kaulais:
+ *   DUTY bazė      LIEKA 10/h  (v2 buvo pakelta į 20, v3 grąžinta)
+ *   SAFE ciklas    200, ubgreidinamas iki 300 (+25 už 150🦴)
+ *   vagystė        45% + 5% degimas = 50%, ubgreidais iki 20%+5% = 25% (−2.5% už 150🦴)
+ *   withdraw       500 → 1000 · sandėlio luba 1000 → 2000
  * Numatytosios reikšmės keičiamos KODE (ne tik env), kad viskas įsijungtų vienu deploy'u. Env override lieka. */
-const MINE_DUTY_BASE_H = Number(process.env.F9_MINE_DUTY_BASE_H) || 20;   // DUTY flat bazė RONKE/h (08-30: 10→20, mirties rizikos premija)
+const MINE_DUTY_BASE_H = Number(process.env.F9_MINE_DUTY_BASE_H) || 10;   // DUTY flat bazė RONKE/h (08-30 v3, user: 20→10 atgal — rizikos kompensacija perkelta į RAID GUARD ubgreidą)
 const MINE_SAFE_BASE_H = Number(process.env.F9_MINE_SAFE_BASE_H) || 5;    // SAFE flat bazė RONKE/h
 const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.05;  // +RONKE/h už RonkePower tašką (07-14 user: 0.1→0.05, bazė 10/6 lieka)
 const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
