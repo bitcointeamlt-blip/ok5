@@ -1519,6 +1519,28 @@
       } catch (_) {}
       try { if (typeof window._f9HospRenderIfOpen === 'function') window._f9HospRenderIfOpen(true); } catch (_) {}
     });
+    /* ⛏️🦴 KASIMO CIKLO LUBOS ubgreidas — serveris grąžina naują lygį ir naują lubą. Kasyklos panelė
+     * persipiešia iš `cemetery` žinutės, kuri ateina po persist'o, tad čia tik pranešam ir paprašom perpiešti. */
+    room.onMessage('minecap_upgraded', function (e) {
+      try {
+        if (window.showGameNotification) {
+          if (e && e.max) window.showGameNotification('⛏️ MINE CYCLE', 'Fully upgraded — SAFE cycle is now ' + (e.step || 300) + ' RONKE', '#ffcf5c');
+          else window.showGameNotification('⛏️ MINE CYCLE', 'Level ' + (e.level || 1) + ' — SAFE cycle is now ' + (e.step || 0) + ' RONKE', '#ffcf5c');
+        }
+      } catch (_) {}
+      try { if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen(); } catch (_) {}
+    });
+    /* 🛡🦴 APIPLĖŠIMO SKYDO ubgreidas — mažina, kiek raideris gali paimti (degimas nekinta). */
+    room.onMessage('raidguard_upgraded', function (e) {
+      try {
+        if (window.showGameNotification) {
+          var loss = (e && e.lossPct != null) ? e.lossPct : 50;
+          if (e && e.max) window.showGameNotification('🛡 RAID GUARD', 'Fully upgraded — raiders now take only ' + loss + '%', '#8fd47c');
+          else window.showGameNotification('🛡 RAID GUARD', 'Level ' + (e.level || 1) + ' — raiders now take ' + loss + '%', '#8fd47c');
+        }
+      } catch (_) {}
+      try { if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen(); } catch (_) {}
+    });
     /* ⚡🛒 BLESS ITEMŲ MARKETAS (08-18) — lotų sąrašas / veiksmo rezultatas / rezervacija apmokėjimui.
      * Piešia game.js (market modalo „⚡ ITEMS" skiltis) — čia tik persiunčiam. */
     room.onMessage('blessmkt', function (e) { try { if (window._f9BmkOnState) window._f9BmkOnState(e); } catch (_) {} });
@@ -1584,7 +1606,10 @@
         if (e.own !== false && typeof e.mpot === 'number') {
           var _ma = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) ? String(window.Wallet.getAddress()).toLowerCase() : '_guest';
           // ⛏️💰 pot = BENDRAS balansas (kasimas + raido grobis) · mined = per šį ciklą IŠKASTA (200 skalė; grobis jos nepildo)
-          window._f9Mine = { pot: e.mpot, mined: (typeof e.mmined === 'number' ? e.mmined : null), rate: (typeof e.mrate === 'number' ? e.mrate : 0), cap: (e.mcap || 200), siegeStep: (e.msiege || 200), claimMin: (e.mclaim || 500), mwd: !!e.mwd, clientOnly: false, _addr: _ma, at: Date.now() };
+          window._f9Mine = { pot: e.mpot, mined: (typeof e.mmined === 'number' ? e.mmined : null), rate: (typeof e.mrate === 'number' ? e.mrate : 0), cap: (e.mcap || 200), siegeStep: (e.msiege || 200), claimMin: (e.mclaim || 500), mwd: !!e.mwd, clientOnly: false, _addr: _ma, at: Date.now(),
+            /* 🦴 08-30 v2 ubgreidai — visus skaičius duoda SERVERIS, klientas nieko nehardkodina. */
+            siegeMax: (e.msiegeMax || 0), capLvl: (e.mcapLvl || 0), capMax: (e.mcapMax || 0), capCost: (e.mcapCost || 0), capAdd: (e.mcapAdd || 0),
+            rgLvl: (e.rgLvl || 0), rgMax: (e.rgMax || 0), rgCost: (e.rgCost || 0), rgLossPct: (e.rgLossPct != null ? e.rgLossPct : null), rgStealPct: (e.rgStealPct != null ? e.rgStealPct : null), rgBurnPct: (e.rgBurnPct != null ? e.rgBurnPct : null), rgStepPct: (e.rgStepPct || 0) };
         }
       } catch (_) {}
       try { if (typeof window._f9CemRenderIfOpen === 'function') window._f9CemRenderIfOpen(); } catch (_) {}
@@ -2433,6 +2458,14 @@
   function upgradeBlessGen() {
     var r = _room(); if (r) { try { r.send('upgrade_blessgen'); } catch (_) {} }
   }
+  // ⛏️🦴 SAFE ciklo luba +25 už 150 kaulų (08-30 v2). Serveris validuoja savininką/kaulus/lygį.
+  function upgradeMineCap() {
+    var r = _room(); if (r) { try { r.send('upgrade_minecap'); } catch (_) {} }
+  }
+  // 🛡🦴 Apiplėšimo skydas −2.5% už 150 kaulų (08-30 v2).
+  function upgradeRaidGuard() {
+    var r = _room(); if (r) { try { r.send('upgrade_raidguard'); } catch (_) {} }
+  }
   // 🛡 Savininkas nusiima skydą (nori būti puolamas anksčiau) — serveris validuoja owner.
   function removeShield() {
     var r = _room(); if (r) { try { r.send('shield_remove'); } catch (_) {} }
@@ -2729,7 +2762,7 @@
   }
 
   window.F9PvpLive = {
-    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, removeShield: removeShield, buildTower: buildTower, stop: stop,
+    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, upgradeMineCap: upgradeMineCap, upgradeRaidGuard: upgradeRaidGuard, removeShield: removeShield, buildTower: buildTower, stop: stop,
     isActive: active,
     netTick: netTick,
     sendCommand: sendCommand,

@@ -11327,7 +11327,10 @@ function _f9MineData() {
     rate: (m && m.rate != null) ? +m.rate : 0,        // RONKE/h
     cap:  (m && m.cap  != null) ? +m.cap  : _F9_MINE_CAP,   // ⛏️💰 balanso backstop (1000)
     mined: (m && m.mined != null) ? +m.mined : null,        // ⛏️🗡 per ŠĮ ciklą iškasta (200 skalė; grobis jos nepildo). null = senas serveris
-    siegeStep: (m && m.siegeStep != null) ? +m.siegeStep : 200,   // 🗡 kas kiek reikia mūšio (200)
+    siegeStep: (m && m.siegeStep != null) ? +m.siegeStep : 200,   // 🗡 kas kiek reikia mūšio (asmeninė luba: 200 + ubgreidai)
+    siegeMax: (m && m.siegeMax) || 0, capLvl: (m && m.capLvl) || 0, capMax: (m && m.capMax) || 0, capCost: (m && m.capCost) || 0, capAdd: (m && m.capAdd) || 0,
+    rgLvl: (m && m.rgLvl) || 0, rgMax: (m && m.rgMax) || 0, rgCost: (m && m.rgCost) || 0,
+    rgLossPct: (m && m.rgLossPct != null) ? m.rgLossPct : null, rgStealPct: (m && m.rgStealPct != null) ? m.rgStealPct : null, rgBurnPct: (m && m.rgBurnPct != null) ? m.rgBurnPct : null, rgStepPct: (m && m.rgStepPct) || 0,
     claimMin: (m && m.claimMin != null) ? +m.claimMin : _F9_MINE_CLAIM,   // 💸 withdraw slenkstis (500)
     nft: el('nft', 0), reg: el('reg', 0), hosp: el('hosp', 0), rv: el('rv', 0), wallet: el('wallet', 0),
     eligible: (m && m.eligible != null) ? !!m.eligible : !!c.eligible,   // eligibility iš cemetery kol serverio mine dar nėra
@@ -11431,6 +11434,39 @@ function _f9MineStoredVoucher() {
     return { claim: c, amt: Math.round(Number(c.amount) / 1e18), expired: msLeft <= 0, minLeft: Math.max(0, Math.ceil(msLeft / 60000)) };
   } catch (_) { return null; }
 }
+/* ⛏️🦴🛡 UBGREIDAI UŽ KAULUS (2026-08-30 v2, user).
+ *   • MINE CYCLE  — SAFE ciklo luba 200 +25 už 150🦴, max 300 (4 lygiai)
+ *   • RAID GUARD  — kiek raideris atima: 50% −2.5% už 150🦴, iki 25% (10 lygių)
+ * Visus skaičius (lygį, kainą, procentus) duoda SERVERIS `cemetery` žinutėje — čia nieko
+ * nehardkodinam, kitaip pakeitus ekonomiką UI meluotų, kol kas nors pastebėtų. */
+const _f9Pct = (v, d) => (v == null ? d : v + '%');
+const _f9Loss = (d) => _f9Pct(d.rgLossPct, '50%');
+const _f9Steal = (d) => _f9Pct(d.rgStealPct, '45%');
+const _f9Burn = (d) => _f9Pct(d.rgBurnPct, '5%');
+function _f9MineUpgHtml(d) {
+  if (!d || !d.capMax) return '';   // senas serveris ubgreidų nesiunčia — nerodom tuščios sekcijos
+  const row = (id, ico, name, now, next, lvl, max, cost, tip) => {
+    const maxed = lvl >= max;
+    return '<div style="display:flex;align-items:center;gap:9px;margin-top:7px;background:rgba(255,255,255,0.03);border:1px solid #2a3a4a;border-radius:6px;padding:8px 10px;">'
+      + '<span style="font-size:15px;">' + ico + '</span>'
+      + '<span style="flex:1;font-size:9px;color:#8a9aaa;line-height:1.5;"><b style="color:#cfe0ee;">' + name + '</b> <span style="color:#5a6a7a;">L' + lvl + '/' + max + '</span><br>'
+      + '<span style="color:#7ab8e8;">' + now + '</span>' + (maxed ? '' : ' <span style="color:#4a5a6a;">&rarr;</span> <span style="color:#8fd47c;">' + next + '</span>')
+      + '<br><span style="color:#5a6a7a;font-size:8px;">' + tip + '</span></span>'
+      + (maxed
+        ? '<span style="font-size:9px;color:#6fcf5c;white-space:nowrap;">✓ MAX</span>'
+        : '<button id="' + id + '" style="font-family:inherit;font-size:9px;background:rgba(255,207,92,0.15);color:#ffcf5c;border:1px solid #7a5a1e;border-radius:5px;padding:7px 10px;cursor:pointer;white-space:nowrap;">🦴 ' + cost + '</button>')
+      + '</div>';
+  };
+  const step = d.siegeStep || 200, add = d.capAdd || 25;
+  const loss = d.rgLossPct != null ? d.rgLossPct : 50, stepPct = d.rgStepPct || 2.5;
+  return '<div style="margin-top:12px;border-top:1px solid #2a3a4a;padding-top:9px;">'
+    + '<div style="font-size:10px;color:#8a9aaa;letter-spacing:0.5px;margin-bottom:2px;">🦴 UPGRADE WITH BONES:</div>'
+    + row('f9mine-upgcap', '⛏️', 'MINE CYCLE', step + ' RONKE', (step + add) + ' RONKE', d.capLvl || 0, d.capMax, d.capCost,
+        'SAFE mines this much before it needs a PvP match.')
+    + row('f9mine-upgguard', '🛡', 'RAID GUARD', loss + '% taken', Math.round((loss - stepPct) * 10) / 10 + '% taken', d.rgLvl || 0, d.rgMax, d.rgCost,
+        'How much a winning raider strips from your un-withdrawn RONKE.')
+    + '</div>';
+}
 function _f9MinePanelStats() {
   if (!_f9MinePanelEl) return;
   const d = _f9MineData();
@@ -11453,7 +11489,7 @@ function _f9MinePanelStats() {
   // ⛏️📱 Nepabaigtas withdraw (voucher'is localStorage) — pot jau nurašytas serveryje, rodom PENDING + RESUME
   const pend = _f9MineStoredVoucher();
   const pendActive = !!(pend && !pend.expired);
-  const step = d.siegeStep || 200;   // 🗡 kas kiek RONKE reikia PvP mūšio
+  const step = d.siegeStep || 200;   // 🗡 kas kiek RONKE reikia PvP mūšio (asmeninė — auga su ubgreidais)
   const hospHint = (d.hosp || 0) > 0 ? ' <span style="color:#e08a4a;">(' + d.hosp + ' in hospital)</span>' : '';
   // reikalavimo eilutė: ✓/○ + tekstas + cur/need; jei NEĮVYKDYTA → aiški veiksmų eilutė žemiau (kaip įsigyti)
   const req = (met, txt, cur, need, fixBtns) =>
@@ -11560,9 +11596,20 @@ function _f9MinePanelStats() {
       card(bOk, 'PATH B', req(bReg, 'Units on castle field' + hospHint, fieldN, MR.bField, deployHint) + req(bWal, 'Units in wallet', d.wallet || 0, MR.bWallet, unitsBtns)) +
       '<div style="margin:13px 0 4px;"><div style="display:flex;justify-content:space-between;font-size:9px;color:' + (ready ? '#6fcf5c' : '#8a9aaa') + ';margin-bottom:5px;"><span>' + (ready ? '✓ READY TO WITHDRAW' : 'WITHDRAW UNLOCKS AT ' + cm + ' RONKE') + '</span><span>' + est.toFixed(0) + ' / ' + cm + '</span></div>' +
         '<div style="height:13px;background:#0a0c18;border:1px solid #3a3a55;border-radius:6px;overflow:hidden;"><div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:' + (ready ? 'linear-gradient(90deg,#4a9a3a,#6fcf5c)' : 'linear-gradient(90deg,#d49a2a,#ffcf5c)') + ';box-shadow:0 0 8px ' + (ready ? 'rgba(111,207,92,0.6)' : 'rgba(255,207,92,0.6)') + ';"></div></div></div>' +
-      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 SAFE — nobody can raid your mined RONKE. It just pauses every ' + step + ' until a PvP match.' : '⚠ DUTY — if raiders beat you, 35% of un-withdrawn RONKE is gone (30% stolen, 5% burned).') + ' Withdraw to your wallet at ' + cm + '+.</div>' +
+      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 SAFE — nobody can raid your mined RONKE. It just pauses every ' + step + ' until a PvP match.' : '⚠ DUTY — if raiders beat you, ' + _f9Loss(d) + ' of un-withdrawn RONKE is gone (' + _f9Steal(d) + ' stolen, ' + _f9Burn(d) + ' burned).') + ' Withdraw to your wallet at ' + cm + '+.</div>' +
+      _f9MineUpgHtml(d) +
       '<div id="f9mine-wdmsg" style="margin-top:8px;font-size:9px;line-height:1.5;color:#7cff6e;letter-spacing:0.3px;text-align:center;">' + (_f9MineWdMsg || '') + '</div>';
   }
+  const _ucap = _f9MinePanelEl.querySelector('#f9mine-upgcap');
+  if (_ucap) _ucap.onclick = function () {
+    if (_ucap.disabled) return; _ucap.disabled = true; _ucap.style.opacity = '.6';
+    try { if (window.F9PvpLive && window.F9PvpLive.upgradeMineCap) window.F9PvpLive.upgradeMineCap(); } catch (_) {}
+  };
+  const _uguard = _f9MinePanelEl.querySelector('#f9mine-upgguard');
+  if (_uguard) _uguard.onclick = function () {
+    if (_uguard.disabled) return; _uguard.disabled = true; _uguard.style.opacity = '.6';
+    try { if (window.F9PvpLive && window.F9PvpLive.upgradeRaidGuard) window.F9PvpLive.upgradeRaidGuard(); } catch (_) {}
+  };
   const ub = _f9MinePanelEl.querySelector('#f9mine-unshield');
   if (ub) ub.onclick = function () { try { if (window.F9PVP && window.F9PVP.room) window.F9PVP.room.send('shield_remove'); } catch (_) {} window.__f9ShieldUntil = 0; _f9MinePanelStats(); };
   const btn = _f9MinePanelEl.querySelector('#f9mine-claim');
