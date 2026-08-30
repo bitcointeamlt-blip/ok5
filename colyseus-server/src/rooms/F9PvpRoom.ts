@@ -3659,19 +3659,33 @@ export class F9PvpRoom extends Room<F9State> {
     this.state.gameStarted = false;
     this.state.winnerSid = winnerSid;
 
-    /* 🪽 SKYDAI SUDEGA (user 08-19: „vienas mačas = vienas BLESS, nesvarbu mirsi ar ne").
-     * Degina TIK tuos, kurie realiai buvo lauke šį mūšį — barakuose laukiantis skydas lieka. */
+    /* 🪽 SKYDAI SUDEGA TIK KRITUSIEMS (2026-08-30, user: „bless pasinaudotų tik ant tų unitų, kurie
+     * eina į ligoninę, o sveiki išgyvenę galėtų laikyti bless ir tam kitam PvP mačui").
+     *
+     * BUVO: „vienas mačas = vienas BLESS, nesvarbu mirsi ar ne" — degė VISIEMS lauke buvusiems.
+     * Kodėl keičiam: taisyklė bausdavo už patį dalyvavimą. Gyvas pavyzdys — žaidėjas 0x1b2c9343
+     * 08-23 nuėjo PULTI su apsaugotu būriu, mūšyje NIEKAS nemirė (ATK d0 · DEF d0), o visi jo skydai
+     * vis tiek išgaravo. Daugiau jų nebedėjo: per kitus 11 mūšių ėjo be apsaugos ir 08-30 neteko
+     * dviejų NFT, nors piniginėje gulėjo 224 nepanaudoti BLESS. Tas pats matėsi ir bendrai:
+     * 915 BLESS žaidėjų rankose prieš 85 aktyvius skydus.
+     *
+     * DABAR: sudega tik tų, kurie realiai krito (t. y. iškeliavo į ligoninę). Išgyvenę pasilieka.
+     * `escaped` NEDEGA — jiems nieko neatsitiko, žaidėjas tiesiog išėjo iš mūšio.
+     * Skydą, kuris SUVEIKĖ (išgelbėjo nuo mirties), jau nurašė `_rollInjury` ir išėmė iš aibės,
+     * tad čia jo antrą kartą nebus. */
     try {
       const _burn = new Map<string, string[]>();
       this.state.units.forEach((u) => {
         if (!u.tokenId) return;
+        const _fell = !u.alive && this._battleFates.get(u.id) !== "escaped";
+        if (!_fell) return;   // 🪽 išgyveno (arba pasitraukė) → skydas LIEKA kitam mūšiui
         const oa = u.owner === AI_DEF_OWNER ? this._ownerAddr
           : String(this.state.players.get(u.owner)?.address || "").trim().toLowerCase();
         if (!oa) return;
         const set = this._shield.get(oa);
         if (set && set.has(u.tokenId)) { set.delete(u.tokenId); (_burn.get(oa) || _burn.set(oa, []).get(oa)!).push(u.tokenId); }
       });
-      _burn.forEach((ids, oa) => { if (ids.length) void shieldBurn(oa, ids); });
+      _burn.forEach((ids, oa) => { if (ids.length) { void shieldBurn(oa, ids); console.log(`[F9PvpRoom] 🪽🔥 ${ids.length} skydai sudegė (kritę unitai) — ${oa.slice(0, 10)}…`); } });
     } catch (_) {}
 
     // 🛡⚰️ SKYDAS + VAGYSTĖ pagal gynėjo LAUKO AUKAS (07-11 kasimo redizainas):

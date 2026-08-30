@@ -12165,8 +12165,9 @@ function _f9BlessSparkle(btn) {
   } catch (_) {}
 }
 /* 🪽🛡 DEATH SHIELD sekcija (2026-08-19, user): uždėjus BLESS ant unito, vietoj mirties jis keliauja
- * į ligoninę. Vienas mačas = vienas BLESS, sudega nesvarbu ar prireikė — todėl rodom AIŠKIAI, kiek
- * kainuos, ir leidžiam uždėti visai komandai vienu paspaudimu. */
+ * į ligoninę.
+ * 08-30 (user): skydas sudega TIK jei unitas realiai krito (iškeliavo į ligoninę). Išgyvenę jį
+ * pasilieka kitam mūšiui — anksčiau degdavo visiems dalyvavusiems, ir žmonės dėl to skydų nebedėdavo. */
 function _f9HospRenderShield() {
   if (!_f9HospPanelEl) return;
   const box = _f9HospPanelEl.querySelector('#f9hosp-shield');
@@ -12214,7 +12215,7 @@ function _f9HospRenderShield() {
             ? '<img src="' + _f9MktUnitSprite(m.utype) + '" alt="" style="width:38px;height:38px;object-fit:contain;image-rendering:pixelated;" onerror="this.replaceWith(document.createTextNode(\'' + _f9MktUnitIcon(m.utype) + '\'))">'
             : '<span style="font-size:22px;opacity:.5;">🪖</span>';
           return '<button ' + (on || !risky ? '' : 'data-shieldone="' + id + '" ') +
-            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead (burns after the match)' : (risky ? 'Spend 1 BLESS to protect this unit' : 'Nothing to protect against right now — death is off')) + '" ' +
+            'title="' + (on ? 'Protected — if it would die, it goes to hospital instead. Only used up if this unit falls; survivors keep it for the next match.' : (risky ? 'Spend 1 BLESS to protect this unit — it stays until the unit actually falls' : 'Nothing to protect against right now — death is off')) + '" ' +
             'style="position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 3px;border-radius:7px;font-family:inherit;cursor:' + (on || !risky ? 'default' : 'pointer') + ';' +
             'border:1px solid ' + (on ? '#2a6a74' : '#3a4055') + ';background:' + (on ? 'rgba(74,157,166,0.16)' : 'rgba(0,0,0,0.25)') + ';">' +
             (on ? '<span style="position:absolute;top:2px;right:2px;">' + _f9WingsIco(12, '') + '</span>' : '') +
