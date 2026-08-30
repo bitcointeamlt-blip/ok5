@@ -2882,6 +2882,12 @@ export class F9PvpRoom extends Room<F9State> {
       power: Math.round(hl.power), fullPower: Math.round(c.power),   // healthy (kasimo bazė) + pilnas registruotas RP (rodymui)
       // ⛏️💰 SERVER-AUTHORITATIVE mining (klientas nustato window._f9Mine → nustoja client accrual):
       // mpot = BENDRAS balansas (kasimas + raido grobis) · mmined = per šį ciklą IŠKASTA (200 skalė; grobis jos nepildo)
+      /* 🛡 08-30: skydo pabaiga NEŠAMA IR ČIA. Anksčiau klientas apie skydą sužinodavo tik iš vienkartinės
+       * `shield` žinutės, siunčiamos `_startMatch` metu ir tik jei tuo momentu `_buildings` jau įkelti.
+       * Nespėjus — žaidėjas matydavo perpus sumažintą greitį (serveris skydą žino, žr. _mineRateFrom),
+       * bet jokios juostos su REMOVE mygtuku: skaičius sako viena, ekranas kita.
+       * `cemetery` siunčiama daug dažniau ir jau po krovimo, tad būsena nebegali prasilenkti. */
+      shieldUntil: (addr === this._ownerAddr ? (Number((this._buildings as any)?.shieldUntil) || 0) : 0),
       mpot: Math.round((c.mpot || 0) * 1000) / 1000, mmined: Math.round(Math.min((c as any).mcp || MINE_SIEGE_STEP, (c as any).mmined || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), msiege: (c as any).mcp || MINE_SIEGE_STEP, msiegeMax: siegeStepFor(MINE_CAP_UPG_MAX), mclaim: MINE_CLAIM_MIN,
       /* 🦴 UBGREIDAI — klientas iš to piešia abu mygtukus ir kainas (nieko nehardkodina savo pusėje). */
       mcapLvl: Math.max(0, Math.min(MINE_CAP_UPG_MAX, Number((this._buildings as any).mineCapLevel) || 0)), mcapMax: MINE_CAP_UPG_MAX, mcapCost: MINE_CAP_UPG_COST, mcapAdd: MINE_CAP_UPG_ADD,

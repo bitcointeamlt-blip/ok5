@@ -1601,6 +1601,13 @@
         mineEligible: (typeof e.mineEligible === 'boolean' ? e.mineEligible : null), mineField: (typeof e.mineField === 'number' ? e.mineField : null), mineRules: e.mineRules || null,   // ⛏️ LAUKO-gate (kasimo eligibility = unitai ant lauko, ne dekas)
         smult: (typeof e.smult === 'number' ? e.smult : 1), stier: e.stier || '', sscore: (typeof e.sscore === 'number' ? e.sscore : 0),   // 🏆 Ronke Score kasimo bonusas (08-13)
         at: Date.now() };
+      /* 🛡 08-30: skydo pabaigą imam iš CEMETERY, ne tik iš vienkartinės `shield` žinutės.
+       * Ta žinutė siunčiama vieną kartą per `_startMatch` ir tik jei tuo momentu serverio `_buildings`
+       * jau įkelti; nespėjus žaidėjas matydavo perpus mažesnį greitį BE juostos su REMOVE mygtuku.
+       * Tik SAVO pilies payload'ui (`own`) — svetimos pilies skydas mūsų mygtuko neliečia. */
+      try {
+        if (e.own !== false && typeof e.shieldUntil === 'number') window.__f9ShieldUntil = e.shieldUntil;
+      } catch (_) {}
       // ⛏️💰 SERVER-AUTHORITATIVE mining: kai serveris siunčia mpot → nustatom _f9Mine (clientOnly:false → STOJA client accrual)
       try {
         if (e.own !== false && typeof e.mpot === 'number') {
