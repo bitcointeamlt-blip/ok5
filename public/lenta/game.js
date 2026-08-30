@@ -12620,8 +12620,14 @@ function _f9ToggleHospitalPanel() {
       '<span id="f9hosp-counter" style="font-size:9px;color:#d49a2a;padding:4px 10px;background:rgba(255,207,92,0.1);border:1px solid #6a4a18;border-radius:4px;"></span>' +
       '<button id="f9hosp-x" style="background:none;border:none;color:#8a9aaa;font-size:20px;cursor:pointer;line-height:1;font-family:inherit;">×</button>' +
     '</div>' +
-    '<div id="f9hosp-body" style="overflow:auto;"></div>' +
-    '<div id="f9hosp-shield"></div>' +   // 🪽 DEATH SHIELD — BLESS ant unitų (08-19)
+    /* 📱 08-30 (žaidėjo pranešimas: „on mobile you can't heal units, you can only protect them").
+     * Panelė yra flex-column su max-height:80vh. Anksčiau gydymo sąrašas turėjo TIK `overflow:auto`
+     * (⇒ min-height virsta 0 ⇒ gali susitraukti iki nieko), o skydų sekcija — jokio stiliaus
+     * (⇒ min-height:auto ⇒ NEGALI trauktis). Todėl skydai pasiimdavo visą aukštį, o gydymo sąrašas
+     * likdavo 0 px: telefone 0 iš 35 mygtukų matomi (išmatuota 390×844 su 18 ligoninėj + 28 deke).
+     * Dabar abi sekcijos ribojamos ir slenka atskirai — tas pats šablonas, kurį #f9mkt-body jau turi. */
+    '<div id="f9hosp-body" style="flex:1 1 auto;overflow-y:auto;min-height:80px;"></div>' +
+    '<div id="f9hosp-shield" style="flex:0 1 auto;overflow-y:auto;min-height:0;max-height:34vh;"></div>' +   // 🪽 DEATH SHIELD — BLESS ant unitų (08-19)
     '<div id="f9hosp-deploy" style="margin-top:8px;padding-top:10px;border-top:1px solid #3a3a55;">' +
       // ⚔ DEPLOY PASLĖPTAS 2026-07-04 (user: „nieko nedaro / neveikia, nenaudingas"). Mygtukas display:none,
       //   BET elementai lieka DOM'e — _f9HospRebuild ref'ai (#f9hosp-deploy-btn / #f9hosp-readyn) nekrenta, jokio konflikto su kodu.
