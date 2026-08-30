@@ -309,12 +309,18 @@
     els.tabTotal.className = 'rp-tab' + (boardMetric === 'total' ? ' rp-tab-on' : '');
   }
   // ── Sezono PRIZAI (2026-08-30, user — A variantas: JUOSTOS, prizai NEsisumuoja) ──
-  //   1–3 vieta  → 80 BLESS   ·  4–10 → 69 BLESS  ·  11–20 → 20 BLESS
-  //   unitai TIK top 5: 5 · 3 · 2 · 1 · 1
+  //   1–3 vieta  → 50 BLESS   ·  4–10 → 25 BLESS  ·  11+ → 15 BLESS
+  //   unitai VISAM top 10: 5 · 3 · 2 · po 1 nuo 4 iki 10 vietos
   //   Reitingas — ASMENINIS BENDRAS score. RONKE prizų fondo nebėra.
+  /* ⚠️ 08-30 v2: žemiausia juosta NEBETURI rango lubų (anksčiau baigdavosi ties 20 vieta).
+   * Kas sužaidė ir pateko į lentelę — gauna 15 BLESS. S2 turėjo 30 dalyvių ⇒ ~625 BLESS/sezoną.
+   * Rizika: su naujomis piniginėmis tai farminama (vienas žaidimas = 15 BLESS, o paros norma
+   * pagal Ronke Score yra tik 3–20). Jei prireiks — ribą deda `PRIZE_MID`-tipo konstanta arba
+   * minimalus score slenkstis, o ne juostų perrašymas. */
+  const PRIZE_TOP = 3, PRIZE_MID = 10;
   function seasonPrize(rank) {
-    const u = rank === 1 ? 5 : rank === 2 ? 3 : rank === 3 ? 2 : rank <= 5 ? 1 : 0;
-    const bl = rank <= 3 ? 80 : rank <= 10 ? 69 : rank <= 20 ? 20 : 0;
+    const u = rank === 1 ? 5 : rank === 2 ? 3 : rank === 3 ? 2 : rank <= PRIZE_MID ? 1 : 0;
+    const bl = rank <= PRIZE_TOP ? 50 : rank <= PRIZE_MID ? 25 : 15;
     return { u: u, bl: bl };
   }
   // Kiekvieno prizo trumpas paaiškinimas — hover (title) + paspaudus popup (žr. showInfo).
