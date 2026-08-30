@@ -3146,7 +3146,12 @@ export class F9PvpRoom extends Room<F9State> {
        * ir žaidėjas, sumokėjęs 150🦴, iškart nematytų jokio pokyčio. */
       const _c = this._cem.get(this._ownerAddr);
       if (_c) { (_c as any).mcp = siegeStepFor(next); this._persistCem(this._ownerAddr); }
-      try { client.send("minecap_upgraded", { level: next, max: next >= MINE_CAP_UPG_MAX, step: siegeStepFor(next), nextCost: next >= MINE_CAP_UPG_MAX ? 0 : MINE_CAP_UPG_COST }); } catch (_) {}
+      /* 📡 `cemetery` siunčiama tik pagal įvykius, ne periodiškai — be šito nusipirkęs žaidėjas
+       * matytų SENĄ lubą, kol kas nors kitas ją atnaujins. Siunčiam kartu su patvirtinimu. */
+      try {
+        client.send("minecap_upgraded", { level: next, max: next >= MINE_CAP_UPG_MAX, step: siegeStepFor(next), nextCost: next >= MINE_CAP_UPG_MAX ? 0 : MINE_CAP_UPG_COST });
+        client.send("cemetery", { ...this._cemPayload(this._ownerAddr), own: true });
+      } catch (_) {}
       console.log(`[F9PvpRoom] ⛏️🦴 mine cycle → L${next} (-${MINE_CAP_UPG_COST}🦴, luba ${siegeStepFor(next)}) ${this._ownerAddr.slice(0, 10)}…`);
     } finally { this._upgBusy = false; }
   }
@@ -3165,7 +3170,10 @@ export class F9PvpRoom extends Room<F9State> {
       if (this.state.players.size > 1 || (Number((this._buildings as any).raidGuardLevel) || 0) >= next) return;
       (this._buildings as any).raidGuardLevel = next;
       this._persistStructures(this._ownerAddr);
-      try { client.send("raidguard_upgraded", { level: next, max: next >= RAID_GUARD_MAX, lossPct: _tot(next), stealPct: Math.round(stealPctFor(next) * 1000) / 10, burnPct: Math.round(MINE_BURN_PCT * 1000) / 10, nextCost: next >= RAID_GUARD_MAX ? 0 : RAID_GUARD_COST }); } catch (_) {}
+      try {
+        client.send("raidguard_upgraded", { level: next, max: next >= RAID_GUARD_MAX, lossPct: _tot(next), stealPct: Math.round(stealPctFor(next) * 1000) / 10, burnPct: Math.round(MINE_BURN_PCT * 1000) / 10, nextCost: next >= RAID_GUARD_MAX ? 0 : RAID_GUARD_COST });
+        client.send("cemetery", { ...this._cemPayload(this._ownerAddr), own: true });   // 📡 kad panelė iškart rodytų naują procentą
+      } catch (_) {}
       console.log(`[F9PvpRoom] 🛡🦴 raid guard → L${next} (-${RAID_GUARD_COST}🦴, nuostolis ${_tot(next)}%) ${this._ownerAddr.slice(0, 10)}…`);
     } finally { this._upgBusy = false; }
   }
