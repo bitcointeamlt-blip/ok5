@@ -197,7 +197,10 @@
   //       'paid' (žaidimas ima 15 RONKE, replay leidžiamas — savaime gate'inasi mokesčiu).
   function _openGame(mode) {
     if (_overlay) return;
-    var url = 'pinball/index.html?embed=' + (mode === 'paid' ? 'paid' : 'free');
+    /* 🧊 Cache-bust: iframe'as kraudavo `index.html` BE versijos, tad naršyklė duodavo seną HTML,
+     * o kartu ir senas `js/web3*.js?v=` nuorodas — nauji sezonai/prizai žaidėjų nepasiekdavo.
+     * Versiją keisti KARTU su `index.html` viduje esančiais `?v=` (dvi vietos). */
+    var url = 'pinball/index.html?v=season3_20260830&embed=' + (mode === 'paid' ? 'paid' : 'free');
     _overlay = document.createElement('div');
     _overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(4,5,8,.96);display:flex;align-items:center;justify-content:center;';
     _overlay.innerHTML =

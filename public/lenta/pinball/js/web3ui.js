@@ -5,7 +5,7 @@
   const W3 = window.RPWeb3;
   if (!W3) return;
 
-  let game = null, root = null, els = {}, mode = 'start', lastRun = null, boardFrom = 'start', boardMetric = 'score';
+  let game = null, root = null, els = {}, mode = 'start', lastRun = null, boardFrom = 'start', boardMetric = 'total';   // 🏆 S3: vienintelis reitingas — bendras score
   let boardSeason = 0;   // 🏁 kurio sezono lentelė rodoma (0 = dar nenustatyta → dabartinis)
 
   const CSS = `
@@ -167,10 +167,7 @@
       '<button class="rp-btn rp-play" id="rp-play"></button>' +
       '<button class="rp-btn rp-secondary" id="rp-secondary"></button>' +
       '<div id="rp-status"></div>' +
-      '<div class="rp-tabs">' +
-        '<button class="rp-tab rp-tab-on" id="rp-tab-best">🏆 BEST</button>' +
-        '<button class="rp-tab" id="rp-tab-total">Σ TOTAL</button>' +
-      '</div>' +
+      /* 🏆 S3: BEST/TOTAL perjungiklio nebėra — reitingas vienas (bendras score). */
       '<div id="rp-board"><div class="rp-empty">loading…</div></div>' +
       '<div class="rp-mini" id="rp-mini"></div>' +
       '</div>';
@@ -186,8 +183,7 @@
     els.title = root.querySelector('#rp-card h1');
     els.season = root.querySelector('#rp-season');
     els.seasons = root.querySelector('#rp-seasons');
-    els.tabBest = root.querySelector('#rp-tab-best');
-    els.tabTotal = root.querySelector('#rp-tab-total');
+    els.tabBest = null; els.tabTotal = null;   // 🏆 S3: tabų nebėra
     els.play.addEventListener('click', onPlay);
     els.secondary.addEventListener('click', onSecondary);
     // ✕ uždarymas: embed board-only (iš RonkeGorilla 🏆) → išeinam į pilį; kitaip → BACK (tęsiam žaidimą)
@@ -196,8 +192,7 @@
       if (/[?&]board=1/.test(location.search) && mode === 'board') { try { parent.postMessage({ type: 'rp_exit' }, '*'); } catch (_) {} }
       else onSecondary();
     });
-    els.tabBest.addEventListener('click', () => setMetric('score'));
-    els.tabTotal.addEventListener('click', () => setMetric('total'));
+    // 🏆 S3: tabų klausytojų nebereikia
     // 🏁 Sezono pasirinkimas (event delegation — mygtukai perpiešiami).
     els.seasons.addEventListener('click', function (ev) {
       const b = ev.target.closest && ev.target.closest('[data-sid]');
@@ -313,29 +308,28 @@
     els.tabBest.className = 'rp-tab' + (boardMetric === 'score' ? ' rp-tab-on' : '');
     els.tabTotal.className = 'rp-tab' + (boardMetric === 'total' ? ' rp-tab-on' : '');
   }
-  // ── Savaitiniai PRIZAI ──
-  const POOL_RONKE = 69000;                        // TOTAL leaderboard prizų fondas (dalinamas pagal taškus)
-  // BEST leaderboard prizas pagal vietą: unitai (top5) + RonkChoco (top10) + kaulai (top20).
-  function bestPrize(rank) {
+  // ── Sezono PRIZAI (2026-08-30, user — A variantas: JUOSTOS, prizai NEsisumuoja) ──
+  //   1–3 vieta  → 80 BLESS   ·  4–10 → 69 BLESS  ·  11–20 → 20 BLESS
+  //   unitai TIK top 5: 5 · 3 · 2 · 1 · 1
+  //   Reitingas — ASMENINIS BENDRAS score. RONKE prizų fondo nebėra.
+  function seasonPrize(rank) {
     const u = rank === 1 ? 5 : rank === 2 ? 3 : rank === 3 ? 2 : rank <= 5 ? 1 : 0;
-    return { u: u, c: rank <= 10 ? 10 : 0, b: rank <= 20 ? 50 : 0 };
+    const bl = rank <= 3 ? 80 : rank <= 10 ? 69 : rank <= 20 ? 20 : 0;
+    return { u: u, bl: bl };
   }
   // Kiekvieno prizo trumpas paaiškinimas — hover (title) + paspaudus popup (žr. showInfo).
   const PRIZE_INFO = {
     units: { name: '⚔ Units', text: 'NFT units used in Age of Ronke and Ronke Saga.' },
-    choco: { name: '🍫 RonkChoco', text: 'RonkChoco is a consumable and tradeable item. Integration is coming soon — win it now, use it later.' },
-    bones: { name: '🦴 Bones', text: '1 Bone = 5 RONKE. Swap them in-game, or use them in Age of Ronke to upgrade your castle.' },
-    ronke: { name: '💰 RONKE', text: 'RONKE is the game token. The 69,000 RONKE pool is split among the TOP 10 by total points collected.' },
+    bless: { name: '🪽 BLESS', text: 'BLESS is used in Age of Ronke: it shields a unit from death in battle, and instantly heals an injured unit in your hospital.' },
   };
   function pzTok(key, label, cls) {
     const t = PRIZE_INFO[key].text.replace(/"/g, '&quot;');
     return '<span class="pz-tok ' + cls + '" data-info="' + key + '" title="' + t + '">' + label + '</span>';
   }
   function prizeCells(rank) {
-    const p = bestPrize(rank), out = [];
+    const p = seasonPrize(rank), out = [];
     if (p.u) out.push(pzTok('units', '⚔ ' + p.u + ' Unit' + (p.u > 1 ? 's' : ''), 'pz-u'));
-    if (p.c) out.push(pzTok('choco', '🍫 ' + p.c + ' RonkChoco', 'pz-c'));
-    if (p.b) out.push(pzTok('bones', '🦴 ' + p.b + ' Bones', 'pz-b'));
+    if (p.bl) out.push(pzTok('bless', '🪽 ' + p.bl + ' BLESS', 'pz-b'));
     return out.join('<span class="pz-sep"> · </span>');
   }
   function num(n) { return (n || 0).toLocaleString('en-US'); }
@@ -354,15 +348,11 @@
     if (!boardSeason) boardSeason = curSeasonId();
     updateTabs(); renderSeasons();
     els.board.innerHTML = '<div class="rp-empty">loading…</div>';
-    const byTotal = boardMetric === 'total';
+    const byTotal = true;   // 🏆 S3: reitingas VISADA pagal bendrą score
     const top = await W3.loadTop(SLOTS, byTotal, boardSeason);
     const me = (W3.getAddress() || '').toLowerCase();
-    const RONKE_TOP = 10;   // 69k RONKE dalinamas TIK top 10 (bet lentelė rodo top 20 — matai savo vietą)
-    const sumTot = byTotal ? (top.slice(0, RONKE_TOP).reduce((s, e) => s + (e.total || 0), 0) || 1) : 1;
-    // Jokios legendos — prizai jau matomi kiekvienoj eilutėj. TOTAL rodo tik bendrą pool sumą (jos eilutėse nėra).
-    let html = byTotal
-      ? '<div class="rp-poolline">💰 Prize pool: <b>' + num(POOL_RONKE) + ' RONKE</b> — shared by TOP 10</div>'
-      : '';
+    // Prizai matomi kiekvienoj eilutėj, tad atskiros legendos nereikia.
+    let html = '<div class="rp-poolline">Σ Ranked by your <b>TOTAL score</b> — every game adds up</div>';
     // VISADA renderinam 20 slotų: užpildyti žaidėjais + tušti „— open —" (prizai matomi kiekvienoj vietoj).
     for (let i = 0; i < SLOTS; i++) {
       const rank = i + 1;
@@ -373,13 +363,7 @@
       const openCls = filled ? '' : ' rp-open';
       const addr = filled ? W3.short(e.addr) : '<span class="rp-open-lbl">— open —</span>';
       const val = filled ? num(byTotal ? e.total : e.score) : '<span class="rp-dim">—</span>';
-      const prize = byTotal
-        ? (rank <= RONKE_TOP
-            ? (filled
-                ? '<span class="rp-prize">' + pzTok('ronke', num(Math.round((e.total || 0) / sumTot * POOL_RONKE)) + ' RONKE', 'rp-ronke') + '</span>'
-                : '<span class="rp-prize rp-dim">top 10 wins the pool</span>')
-            : '<span class="rp-prize rp-dim">reach top 10 to win RONKE</span>')   // 11-20: rodo vietą, be prizo
-        : '<span class="rp-prize">' + prizeCells(rank) + '</span>';
+      const prize = '<span class="rp-prize">' + prizeCells(rank) + '</span>';
       html += '<div class="rp-row' + (rank <= 3 ? ' g' + rank : '') + meCls + openCls + '">' +
         '<span class="rp-rank">' + medal + '</span>' +
         '<div class="rp-mid"><span class="rp-raddr">' + addr + '</span>' + prize + '</div>' +

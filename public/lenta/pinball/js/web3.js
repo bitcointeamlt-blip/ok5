@@ -271,6 +271,9 @@
   const SEASONS = [
     { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0) },
     { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0) },
+    /* 🏆 SEZONAS 3 (2026-08-30, user): vienas lyderbordas — ASMENINIS BENDRAS score (visų žaidimų suma),
+     * jokio „geriausio vieno žaidimo" reitingo. Prizai — BLESS juostomis + unitai top 5. RONKE fondo nebėra. */
+    { id: 3, key: 'rp3_', name: 'SEASON 3', start: Date.UTC(2026, 7, 30, 8, 0, 0), end: Date.UTC(2026, 8, 6, 8, 0, 0) },
   ];
   // Serverio laikas (Supabase `Date`) jei žinom, kitaip vietinis fallback → veikia net be tinklo.
   function nowMs() { return hasServerTime() ? serverNow() : Date.now(); }
