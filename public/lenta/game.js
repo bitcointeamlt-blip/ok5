@@ -11499,7 +11499,7 @@ function _f9MinePanelStats() {
         '<div style="margin-top:6px;font-size:8px;line-height:1.5;color:' + (d.gated ? '#e8a08a' : '#6a7a8a') + ';">' + (d.gated ? '🔒 <b>Mining paused</b> — you mined the full ' + step + ' this cycle. Switch to 🟢 DUTY (no limit) or fight <b>one PvP match</b> (either side 50% casualties) to reset the cycle.' : '🛡 Protected &amp; hidden. Mining STOPS after <b>' + step + ' mined</b> until a PvP match — or switch to 🟢 DUTY to mine freely. Raid loot goes to your balance and does <b>not</b> fill this bar.') + '</div>' +
       '</div>';
   } else {
-    dutyInfo = '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">🟢 Faster mining + raidable — no mining limit, mine freely. But raiders steal 50% of un-withdrawn RONKE if they beat you.</div>';
+    dutyInfo = '<div style="margin-top:8px;font-size:8px;color:#6a7a8a;line-height:1.5;">🟢 Faster mining + raidable — no mining limit, mine freely. But if raiders beat you, 35% of un-withdrawn RONKE is gone: 30% to them, 5% burned.</div>';
   }
   // 🏆 RONKE SCORE eilutė (08-13 user): KIEKVIENAS jaučiasi RONKE bendruomenės dalimi — visi tier'ai gauna
   //   badge su kasimo bonusu; 💎 DIAMOND (top 1%) — VIENINTELIS su animuotu blizgesiu; be tier'o — kvietimas.
@@ -11560,7 +11560,7 @@ function _f9MinePanelStats() {
       card(bOk, 'PATH B', req(bReg, 'Units on castle field' + hospHint, fieldN, MR.bField, deployHint) + req(bWal, 'Units in wallet', d.wallet || 0, MR.bWallet, unitsBtns)) +
       '<div style="margin:13px 0 4px;"><div style="display:flex;justify-content:space-between;font-size:9px;color:' + (ready ? '#6fcf5c' : '#8a9aaa') + ';margin-bottom:5px;"><span>' + (ready ? '✓ READY TO WITHDRAW' : 'WITHDRAW UNLOCKS AT ' + cm + ' RONKE') + '</span><span>' + est.toFixed(0) + ' / ' + cm + '</span></div>' +
         '<div style="height:13px;background:#0a0c18;border:1px solid #3a3a55;border-radius:6px;overflow:hidden;"><div style="height:100%;width:' + (prog * 100).toFixed(1) + '%;background:' + (ready ? 'linear-gradient(90deg,#4a9a3a,#6fcf5c)' : 'linear-gradient(90deg,#d49a2a,#ffcf5c)') + ';box-shadow:0 0 8px ' + (ready ? 'rgba(111,207,92,0.6)' : 'rgba(255,207,92,0.6)') + ';"></div></div></div>' +
-      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 SAFE — nobody can raid your mined RONKE. It just pauses every ' + step + ' until a PvP match.' : '⚠ DUTY — raiders steal 50% of un-withdrawn RONKE if they beat you.') + ' Withdraw to your wallet at ' + cm + '+.</div>' +
+      '<div style="color:#6a7a8a;font-size:9px;margin-top:10px;letter-spacing:0.3px;line-height:1.5;">' + (d.duty === 'safe' ? '🛡 SAFE — nobody can raid your mined RONKE. It just pauses every ' + step + ' until a PvP match.' : '⚠ DUTY — if raiders beat you, 35% of un-withdrawn RONKE is gone (30% stolen, 5% burned).') + ' Withdraw to your wallet at ' + cm + '+.</div>' +
       '<div id="f9mine-wdmsg" style="margin-top:8px;font-size:9px;line-height:1.5;color:#7cff6e;letter-spacing:0.3px;text-align:center;">' + (_f9MineWdMsg || '') + '</div>';
   }
   const ub = _f9MinePanelEl.querySelector('#f9mine-unshield');

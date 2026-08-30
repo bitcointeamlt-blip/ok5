@@ -1619,19 +1619,28 @@
         if (window.showGameNotification) window.showGameNotification('🛡 PROTECTED', 'Safe after battle — nobody can raid you. Heal & redeploy 12 units, then tap ON DUTY when ready.', '#7fd0d8');
       } catch (_) {}
     });
-    room.onMessage('mine_stolen', function (e) {   // ⛏️ 100% wipe → 50% pot pavogta. Gynėjas praranda; puolikas (thief) gauna į savo namų pot.
+    /* ⛏️ 100% wipe → dalis nesurinkto pot dingsta. 08-30: puolikas ir gynėjas mato SKIRTINGUS skaičius —
+     * puolikui atitenka `amount` (30%), o gynėjas netenka `lost` (35%), nes 5% sudega niekam.
+     * Seni serveriai `lost`/`burned` nesiunčia, tad fallback'as į `amount`. */
+    room.onMessage('mine_stolen', function (e) {
       try {
         var amt = (e && Number(e.amount)) || 0;
-        if (amt <= 0) return;
+        var lost = (e && Number(e.lost)) || amt;
+        var burned = (e && Number(e.burned)) || 0;
+        if (amt <= 0 && lost <= 0) return;
         var now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
         if (e.thiefSid && e.thiefSid === mySid) {
           // 💰 AŠ puolikas — serveris grobį jau įskaitė į mano NAMŲ mining pot (matysis grįžus namo / kitą cemetery žinutę).
           window._f9MineLootFx = { gained: amt, t: now };
           try { if (window.showGameNotification) window.showGameNotification('⛏️ LOOTED', '+' + amt.toFixed(0) + ' RONKE from their mine — waiting in your pot at home', '#ffcf5c'); } catch (_) {}
         } else {
-          // 💀 AŠ gynėjas — netekau 50% nesurinkto pot (serveris jau nuėmė; optimistiškai atspindim, pot patvirtins kita cemetery žinutė).
-          if (window._f9Mine && typeof window._f9Mine.pot === 'number') { window._f9Mine.pot = Math.max(0, window._f9Mine.pot - amt); }
-          window._f9MineStealFx = { lost: amt, t: now };
+          // 💀 AŠ gynėjas — netekau steal+burn (serveris jau nuėmė; optimistiškai atspindim, pot patvirtins kita cemetery žinutė).
+          if (window._f9Mine && typeof window._f9Mine.pot === 'number') { window._f9Mine.pot = Math.max(0, window._f9Mine.pot - lost); }
+          window._f9MineStealFx = { lost: lost, t: now };
+          try {
+            if (window.showGameNotification) window.showGameNotification('⛏️ RAIDED',
+              '-' + lost.toFixed(0) + ' RONKE from your mine' + (burned > 0 ? ' (' + burned.toFixed(0) + ' burned, ' + amt.toFixed(0) + ' taken)' : ''), '#f66');
+          } catch (_) {}
         }
         if (typeof window._f9MineRenderIfOpen === 'function') window._f9MineRenderIfOpen();
       } catch (_) {}

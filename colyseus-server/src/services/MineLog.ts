@@ -17,7 +17,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // SAUGOJIMAS: atskira `f9_bases` eilutė `<addr>#minelog` (kaip #raidlog / #bones) —
 // DDL negalimas (mgmt token miręs), tad be naujų lentelių. Cap 200 įrašų/žaidėjui.
 
-export type MineEventKind = "duty" | "siege" | "gate" | "withdraw" | "steal";
+/* `burn` (2026-08-30): po raido dalis gynėjo pot'o dingsta NIEKAM (MINE_BURN_PCT). Būtina atskira rūšis —
+ * iki tol galiojo invariantas „gynėjo praradimas == puoliko `steal`", o dabar skirtumą sudaro būtent burn. */
+export type MineEventKind = "duty" | "siege" | "gate" | "withdraw" | "steal" | "burn";
 
 export interface MineEvent {
   t: number;              // laikas (epoch ms)

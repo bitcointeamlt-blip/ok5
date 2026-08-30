@@ -299,15 +299,35 @@ const RAID_FIELD_REQ = Number(process.env.F9_RAID_FIELD_REQ) || MINE_FIELD_REQ_A
 const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h bazė (kai eligible + ≥1 lauke)
 // 🏁 07-15 (user): VIENODAS FLAT rate visiems eligible — SAFE 5/h, DUTY 10/h, + RONKE Power bonusas.
 //   (Pakeičia lauko-frakcija × success × dutyMult modelį; DUTY 10 == senas PILNO lauko rate.)
-const MINE_DUTY_BASE_H = Number(process.env.F9_MINE_DUTY_BASE_H) || 10;   // DUTY flat bazė RONKE/h
+/* ⛏️💰 2026-08-30 EKONOMIKOS PERTVARKA (user sprendimas). Mirtis gyva, tad rizika turi būti apmokėta:
+ *   DUTY bazė 10 → 20/h · SAFE ciklas 200 → 300 · withdraw 500 → 1000 · vagystė 50% → 30% (+5% sudega)
+ * Numatytosios reikšmės keičiamos KODE (ne tik env), kad viskas įsijungtų vienu deploy'u. Env override lieka. */
+const MINE_DUTY_BASE_H = Number(process.env.F9_MINE_DUTY_BASE_H) || 20;   // DUTY flat bazė RONKE/h (08-30: 10→20, mirties rizikos premija)
 const MINE_SAFE_BASE_H = Number(process.env.F9_MINE_SAFE_BASE_H) || 5;    // SAFE flat bazė RONKE/h
 const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.05;  // +RONKE/h už RonkePower tašką (07-14 user: 0.1→0.05, bazė 10/6 lieka)
 const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
-const MINE_CAP = Number(process.env.F9_MINE_CAP) || 1000;          // ⛏️ kietas sandėlio backstop (checkpoint'ai realiai riboja; pot čia niekada normaliai nepasieks)
-const MINE_CLAIM_MIN = Number(process.env.F9_MINE_CLAIM) || 500;   // 💸 withdraw slenkstis — pasiekus 500 pot gali nusiimti į piniginę (07-14 user)
-const MINE_SIEGE_STEP = Number(process.env.F9_MINE_SIEGE_STEP) || 200;   // ⛏️🗡 kas 200 RONKE kasimas STOJA → reikia 1 PvP mūšio (50% aukų bet kuriai pusei) kad tęstųsi. Abu režimai.
+/* ⚠️ MINE_CAP privalo būti > MINE_CLAIM_MIN. Slenkstį kėlus iki 1000 senasis cap=1000 reikštų, kad pot
+ * kaupiasi lygiai iki nusiėmimo ribos ir NĖ VIENO RONKE daugiau: pasiekęs 1000 žaidėjas kastų į tuštumą,
+ * o raido grobis virš cap'o tyliai dingtų (`Math.min(MINE_CAP, cur + steal)`). 2000 = 2× slenkstis. */
+const MINE_CAP = Number(process.env.F9_MINE_CAP) || 2000;          // ⛏️ kietas sandėlio backstop (08-30: 1000→2000, nes claim min tapo 1000)
+const MINE_CLAIM_MIN = Number(process.env.F9_MINE_CLAIM) || 1000;  // 💸 withdraw slenkstis (08-30: 500→1000)
+const MINE_SIEGE_STEP = Number(process.env.F9_MINE_SIEGE_STEP) || 300;   // ⛏️🗡 kas 300 RONKE kasimas STOJA → reikia 1 PvP mūšio (50% aukų bet kuriai pusei) kad tęstųsi. Abu režimai. (08-30: 200→300)
 const MINE_SUCCESS = Number(process.env.F9_MINE_SUCCESS) || 0.5;   // sėkmės tikimybė (0.5 → 2× lėčiau; fail vidurkinamas rate'e)
-const MINE_STEAL_PCT = 0.5;                                        // 100% wipe → puolikas „pavogia" 50% pot (defender praranda)
+/* ⚰️💰 GROBIS PO 100% WIPE (08-30, user): gynėjas praranda STEAL+BURN, bet puolikui atitenka tik STEAL.
+ * Anksčiau buvo 50% ir viskas puolikui. Puoliko dalis mažinama sąmoningai — auditas parodė, kad
+ * pelningiausia strategija buvo ne kasti, o plėšti kasančius.
+ * ⚠️ BURN nėra token burn: `minePot` yra DB skaičius, tad „sudeginta" dalis paprasčiausiai niekada
+ * nebus išmokėta iš reward pool'o. Praktinis efektas — pailgėjęs pool'o runway. */
+const MINE_STEAL_PCT = Number(process.env.F9_MINE_STEAL_PCT ?? 0.30);   // → PUOLIKUI
+const MINE_BURN_PCT = Number(process.env.F9_MINE_BURN_PCT ?? 0.05);     // → DINGSTA (niekam)
+/* 🧪 08-30: kasimo derinamieji dydžiai EKSPORTUOJAMI, kad `_rulesim` tikrintų TAISYKLĘ, o ne skaičių.
+ * Iki tol simuliacijose buvo įrašyta „200" ir „1000"; pakeitus ekonomiką 64 scenarijai nukrisdavo ne dėl
+ * bug'o, o dėl pasenusio lūkesčio — ir tikras regresas tokiame triukšme liktų nepastebėtas. */
+export const MINE_TUNABLES = {
+  DUTY_BASE_H: MINE_DUTY_BASE_H, SAFE_BASE_H: MINE_SAFE_BASE_H,
+  SIEGE_STEP: MINE_SIEGE_STEP, CLAIM_MIN: MINE_CLAIM_MIN, CAP: MINE_CAP,
+  STEAL_PCT: MINE_STEAL_PCT, BURN_PCT: MINE_BURN_PCT,
+};
 // ⚔️🛡 DUTY STATUS (07-13 user): žaidėjas pasirenka režimą. ON DUTY = 2× kasimas + puolamas; SAFE = 1.2× +
 //   nepuolamas, BET pasiekus lubas kasimas SUSTOJA kol atliks siege (bet kuri pusė ≥50% aukų). Anti-dodge:
 //   režimas nekeičiamas kovos metu. Default = online (išlaiko dabartinį raidability + 2× buff visiems).
@@ -3664,10 +3684,21 @@ export class F9PvpRoom extends Room<F9State> {
               this._cemAccrue(this._ownerAddr);
               const c = this._cem.get(this._ownerAddr);
               if (!c || (c.mpot || 0) < 0.1) return;
-              const steal = Math.round((c.mpot || 0) * MINE_STEAL_PCT * 1000) / 1000;
-              c.mpot = Math.round(((c.mpot || 0) - steal) * 1000) / 1000;
+              /* ⚰️💰 08-30: gynėjas praranda STEAL + BURN, puolikas gauna TIK STEAL.
+               * Skaičiuojam abu nuo TO PATIES pradinio pot — kitaip burn imtų procentą nuo jau
+               * apkarpytos sumos ir realus nuostolis nebūtų 35%. */
+              const pot0 = c.mpot || 0;
+              const steal = Math.round(pot0 * MINE_STEAL_PCT * 1000) / 1000;
+              const burned = Math.round(pot0 * MINE_BURN_PCT * 1000) / 1000;
+              c.mpot = Math.round(Math.max(0, pot0 - steal - burned) * 1000) / 1000;
               this._persistCem(this._ownerAddr);
-              this._raidStolen = steal;   // 📜 ataskaitai
+              this._raidStolen = steal;   // 📜 ataskaitai (kiek atiteko puolikui)
+              /* ⛏️📜 Sudegusi dalis fiksuojama ATSKIRAI. Be šito auditas nesuvestų galų: iki šiol
+               * galiojo „gynėjo praradimas == puoliko gavimas", o dabar skirtumas yra burn. */
+              if (burned > 0) {
+                MineLog.add(this._ownerAddr, { k: "burn", amt: Math.round(burned * 100) / 100, pot: c.mpot, why: `raid burn ${Math.round(MINE_BURN_PCT * 100)}%` });
+                console.log(`[F9PvpRoom] 🔥 raid burn: ${burned} RONKE dingo iš ${this._ownerAddr.slice(0, 10)}… (niekam neatiteko)`);
+              }
               // 💰 PUOLIKAS GAUNA grobį į SAVO mining pot (capped MINE_CAP). Per atakuotojo #buildings eilę —
               //   NEteršiam šio kambario _cem (kad _cemAccrue nepriskaičiuotų klaidingo rate pagal gynėjo lauką);
               //   grįžęs namo puolikas _loadCem'ins šviežią minePot su grobiu. Read-modify-write serializuota per boneBankOp.
@@ -3678,8 +3709,10 @@ export class F9PvpRoom extends Room<F9State> {
                   MineLog.add(wAddr, { k: "steal", amt: Math.round(steal * 100) / 100, pot: (b as any).minePot, why: "raid loot" });   // ⛏️📜 grobis ≠ kasimas — auditui skiriam
                 });
               }
-              this.broadcast("mine_stolen", { amount: steal, thiefSid: winnerSid, victimAddr: this._ownerAddr });   // FX/notif abiem pusėm (thief=+ / defender=−)
-              console.log(`[F9PvpRoom] ⛏️💀 mining grobis: ${steal} RONKE iš ${this._ownerAddr.slice(0, 10)}… → puolikui ${wAddr.slice(0, 10)}… (100% wipe, gynėjui liko ${c.mpot})`);
+              // FX/notif abiem pusėm. `amount` = kiek gavo puolikas; `lost` = kiek NETEKO gynėjas (steal+burn) —
+              // klientas turi rodyti skirtingus skaičius, kitaip gynėjui atrodytų, kad dingo mažiau nei iš tikrųjų.
+              this.broadcast("mine_stolen", { amount: steal, burned, lost: Math.round((steal + burned) * 1000) / 1000, thiefSid: winnerSid, victimAddr: this._ownerAddr });
+              console.log(`[F9PvpRoom] ⛏️💀 mining grobis: ${steal} RONKE → puolikui ${wAddr.slice(0, 10)}… · 🔥 ${burned} sudegė · gynėjas ${this._ownerAddr.slice(0, 10)}… neteko ${Math.round((steal + burned) * 1000) / 1000}, liko ${c.mpot}`);
             } catch (_) {}
           })();
         }
