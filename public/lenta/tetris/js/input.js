@@ -3,16 +3,26 @@
 (function (global) {
   'use strict';
 
+  /* Klavišas -> veiksmas. Tam pačiam veiksmui gali būti KELI klavišai:
+   * rodyklės ir WSAD veikia VIENU METU (yra klaviatūrų be rodyklių).
+   * Susipjovimo nėra, nes veiksmas skaičiuojamas pagal LAIKOMŲ klavišų kiekį
+   * (žr. _heldCount): antras klavišas nepakartoja press, o pirmas atleistas
+   * neatšaukia judesio, kol laikomas jo dvynys. */
   var KEYMAP = {
     'ArrowLeft': 'left',
     'ArrowRight': 'right',
     'ArrowDown': 'softdrop',
     'ArrowUp': 'cw',
+    'KeyA': 'left',
+    'KeyD': 'right',
+    'KeyS': 'softdrop',
+    'KeyW': 'cw',
     'KeyX': 'cw',
     'KeyZ': 'ccw',
     'ControlLeft': 'ccw',
     'ControlRight': 'ccw',
-    'KeyA': 'flip',
+    'KeyQ': 'flip',
+    'KeyE': 'flip',
     'Space': 'hard',
     'KeyC': 'hold',
     'ShiftLeft': 'hold',
@@ -96,13 +106,23 @@
     this.down = {};
     var self = this;
 
+    /* Kiek klavišų dabar laikoma tam pačiam veiksmui (pvz. ArrowLeft + KeyA). */
+    this._heldCount = function (a) {
+      var n = 0;
+      for (var code in KEYMAP) if (KEYMAP[code] === a && self.down[code]) n++;
+      return n;
+    };
+
     this._kd = function (e) {
       if (e.repeat) { if (KEYMAP[e.code]) e.preventDefault(); return; }
       var a = KEYMAP[e.code];
       if (a) {
         e.preventDefault();
+        if (self.down[e.code]) return;          /* jau laikomas — nieko nekartojam */
         self.down[e.code] = true;
-        match.playerPress(a);
+        /* press siunčiam tik PIRMAM klavišui: kitaip antras dvynys iš naujo
+         * paleistų DAS ir online režimu antrą kartą siųstų 'down' bei garsą */
+        if (self._heldCount(a) === 1) match.playerPress(a);
         return;
       }
       var m = META[e.code];
@@ -113,19 +133,20 @@
       var a = KEYMAP[e.code];
       if (a) {
         e.preventDefault();
+        if (!self.down[e.code]) return;
         self.down[e.code] = false;
         /* atleidžiam tik jei joks kitas tą patį veiksmą duodantis klavišas nelaikomas */
-        var stillHeld = false;
-        for (var code in KEYMAP) {
-          if (KEYMAP[code] === a && self.down[code]) { stillHeld = true; break; }
-        }
-        if (!stillHeld) match.playerRelease(a);
+        if (self._heldCount(a) === 0) match.playerRelease(a);
       }
     };
 
     this._blur = function () {
+      var done = {};
       for (var code in self.down) {
-        if (self.down[code]) { self.down[code] = false; match.playerRelease(KEYMAP[code]); }
+        if (!self.down[code]) continue;
+        self.down[code] = false;
+        var act = KEYMAP[code];
+        if (act && !done[act]) { done[act] = true; match.playerRelease(act); }
       }
     };
 

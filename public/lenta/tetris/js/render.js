@@ -1295,10 +1295,10 @@
 
     /* valdymas */
     panel(ctx, cx - 190, 242, 380, 62);
-    T.center(ctx, 'CONTROLS', cx, 246, U.gold, 1);
+    T.center(ctx, 'CONTROLS   -   ARROWS or WSAD', cx, 246, U.gold, 1);
     var ctrls = [
-      'LEFT / RIGHT  MOVE          DOWN  SOFT DROP',
-      'UP or X  ROTATE CW          Z  ROTATE CCW      A  ROTATE 180',
+      'LEFT/RIGHT or A/D  MOVE        DOWN or S  SOFT DROP',
+      'UP/W/X  ROTATE CW      Z  ROTATE CCW      Q/E  ROTATE 180',
       'SPACE  HARD DROP            C or SHIFT  HOLD',
       'F  FULLSCREEN     P  PAUSE     M  MUTE     R  RESTART     ESC  MENU'
     ];
@@ -1590,10 +1590,10 @@
 
     /* valdymas */
     panel(ctx, cx - 190, 242, 380, 62);
-    T.center(ctx, 'CONTROLS', cx, 246, U.gold, 1);
+    T.center(ctx, 'CONTROLS   -   ARROWS or WSAD', cx, 246, U.gold, 1);
     var ctrls = [
-      'LEFT / RIGHT  MOVE          DOWN  SOFT DROP',
-      'UP or X  ROTATE CW          Z  ROTATE CCW      A  ROTATE 180',
+      'LEFT/RIGHT or A/D  MOVE        DOWN or S  SOFT DROP',
+      'UP/W/X  ROTATE CW      Z  ROTATE CCW      Q/E  ROTATE 180',
       'SPACE  HARD DROP            C or SHIFT  HOLD',
       'F  FULLSCREEN     P  PAUSE     M  MUTE     R  RESTART     ESC  MENU'
     ];
