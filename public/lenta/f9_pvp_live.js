@@ -1616,7 +1616,15 @@
           window._f9Mine = { pot: e.mpot, mined: (typeof e.mmined === 'number' ? e.mmined : null), rate: (typeof e.mrate === 'number' ? e.mrate : 0), cap: (e.mcap || 200), siegeStep: (e.msiege || 200), claimMin: (e.mclaim || 500), mwd: !!e.mwd, clientOnly: false, _addr: _ma, at: Date.now(),
             /* 🦴 08-30 v2 ubgreidai — visus skaičius duoda SERVERIS, klientas nieko nehardkodina. */
             siegeMax: (e.msiegeMax || 0), capLvl: (e.mcapLvl || 0), capMax: (e.mcapMax || 0), capCost: (e.mcapCost || 0), capAdd: (e.mcapAdd || 0),
-            rgLvl: (e.rgLvl || 0), rgMax: (e.rgMax || 0), rgCost: (e.rgCost || 0), rgLossPct: (e.rgLossPct != null ? e.rgLossPct : null), rgStealPct: (e.rgStealPct != null ? e.rgStealPct : null), rgBurnPct: (e.rgBurnPct != null ? e.rgBurnPct : null), rgStepPct: (e.rgStepPct || 0) };
+            rgLvl: (e.rgLvl || 0), rgMax: (e.rgMax || 0), rgCost: (e.rgCost || 0), rgLossPct: (e.rgLossPct != null ? e.rgLossPct : null), rgStealPct: (e.rgStealPct != null ? e.rgStealPct : null), rgBurnPct: (e.rgBurnPct != null ? e.rgBurnPct : null), rgStepPct: (e.rgStepPct || 0),
+            /* 🪜 08-31: pakopų lentelė ateina IŠ SERVERIO — modalas jos nehardkodina. */
+            tiers: Array.isArray(e.mtiers) ? e.mtiers : null,
+            /* 🪜 08-31 v2: SAFE turi SAVO lentelę (anksčiau buvo išvedama iš DUTY per bendrą bazę,
+             * todėl DUTY kėlimas kėlė ir SAFE). Senas serveris jos nesiunčia → null, ir modalas
+             * tokiu atveju SAFE stulpelio tiesiog nerodo, o ne pripaišo neteisingų skaičių. */
+            tiersSafe: Array.isArray(e.mtiersSafe) ? e.mtiersSafe : null,
+            tierMult: (e.mtierMult || 1.5), powCap: (e.mpowCap || 3500),
+            dutyBase: (typeof e.dutyOnlineBase === 'number' ? e.dutyOnlineBase : 10), safeBase: (typeof e.dutySafeBase === 'number' ? e.dutySafeBase : 5) };
         }
       } catch (_) {}
       try { if (typeof window._f9CemRenderIfOpen === 'function') window._f9CemRenderIfOpen(); } catch (_) {}

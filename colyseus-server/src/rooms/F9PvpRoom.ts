@@ -308,8 +308,52 @@ const MINE_BASE_H = Number(process.env.F9_MINE_BASE_H) || 10;      // RONKE/h ba
  * Numatytosios reikšmės keičiamos KODE (ne tik env), kad viskas įsijungtų vienu deploy'u. Env override lieka. */
 const MINE_DUTY_BASE_H = Number(process.env.F9_MINE_DUTY_BASE_H) || 10;   // DUTY flat bazė RONKE/h (08-30 v3, user: 20→10 atgal — rizikos kompensacija perkelta į RAID GUARD ubgreidą)
 const MINE_SAFE_BASE_H = Number(process.env.F9_MINE_SAFE_BASE_H) || 5;    // SAFE flat bazė RONKE/h
-const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.05;  // +RONKE/h už RonkePower tašką (07-14 user: 0.1→0.05, bazė 10/6 lieka)
-const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 4000;  // whale cap
+const MINE_POWER_H = Number(process.env.F9_MINE_POWER_H) || 0.05;  // (paliktas suderinamumui — kreivės nebenaudoja)
+const MINE_POW_CAP = Number(process.env.F9_MINE_POW_CAP) || 3500;  // whale cap (08-31 v2: 4500→3500 — čia lubos)
+
+/* ⛏️🪜 KASIMO PAKOPOS (2026-08-31 v2, user) — DVI ATSKIROS LENTELĖS, po vieną režimui.
+ *
+ * Tikslas (user): „visi kasa SAFE, noriu SAFE sumažinti ir DUTY padidinti — tada bus daugiau PvP".
+ * Išmatuota prieš keičiant: 13 iš 14 aktyvių pilių sėdi SAFE; ciklų per parą 1,9 (ne 0,33, kaip
+ * spėjo pirmas modelis — klaida rasta lyginant su `#minelog` duomenimis).
+ *
+ * KODĖL DVI LENTELĖS, o ne viena su bazėmis: iki šiol rate = (bazė + powerTerm) × scoreMult, o
+ * powerTerm buvo BENDRAS. Todėl pakėlus DUTY automatiškai kildavo ir SAFE (skaičiavimas parodė
+ * SAFE 9/h → 10/h prie 0 power, t.y. į PRIEŠINGĄ pusę). Vienintelis būdas judinti režimus
+ * nepriklausomai — atskiros lentelės.
+ *
+ * REIKŠMĖS = RONKE/h, kaip mato žaidėjas su TOP 1% (×1.5). Kitos Score pakopos išsiveda dalinant
+ * iš 1.5 ir dauginant iš savo daugiklio. Power apvalinamas ŽEMYN iki artimiausios ribos.
+ *
+ * LUBOS: DUTY 200/h ir SAFE 100/h ties 3500 power — virš 3500 nieko nebeprideda (MINE_POW_CAP).
+ * Žingsniai nuo 100 power tiesiniai (vienodas prieaugis už tą patį power kiekį) — user'io skundas
+ * buvo „per didelis šuolis nuo 157 iki 182"; dabar didžiausias DUTY žingsnis +20 (buvo +82).
+ *
+ * APVALŪS SKAIČIAI (user, 08-31: „nereikia to maksimalaus tikslumo"): DUTY — kartotiniai iš 10,
+ * SAFE — iš 5. Tai tiesinė kreivė, suapvalinta, o ne atsitiktiniai skaičiai: nuo 100 iki 3500 power
+ * DUTY auga po +10 kas 250 power ir po +20 kas 500 — tempas visur vienodas. Tikslumo netenkam
+ * ≤4 RONKE/h, o žaidėjas gauna lentelę, kurią gali įsiminti ir suskaičiuoti galvoje.
+ *
+ * ⚠️ EMISIJA: DUTY neturi ciklo lubų, tad visiems perėjus į DUTY emisija būtų ~21 300 RONKE/parą
+ * (dabar ~4 800). Pool'as tam neparuoštas — jei prireiks, ribojam per DUTY ciklą, ne per ratą. */
+const MINE_TIERS_DUTY: Array<[number, number]> = [
+  [0, 20], [100, 60], [250, 70], [500, 80], [750, 90], [1000, 100],
+  [1500, 120], [2000, 140], [2500, 160], [3000, 180], [3500, 200],
+];
+const MINE_TIERS_SAFE: Array<[number, number]> = [
+  [0, 5], [100, 15], [250, 20], [500, 25], [750, 30], [1000, 40],
+  [1500, 50], [2000, 65], [2500, 75], [3000, 90], [3500, 100],
+];
+const MINE_TIERS = MINE_TIERS_DUTY;   // senas vardas = DUTY lentelė (klientų/testų suderinamumui)
+const MINE_TIER_MULT = Number(process.env.F9_SCORE_MULT_P99) || 1.5;   // lentelės surašytos su TOP 1%
+/** Pakopos RODOMA reikšmė (su TOP 1%) pagal power ir režimą — apvalinant ŽEMYN. */
+function mineTierValue(power: number, safe = false): number {
+  const tbl = safe ? MINE_TIERS_SAFE : MINE_TIERS_DUTY;
+  const p = Math.max(0, Number(power) || 0);
+  let v = tbl[0][1];
+  for (const [min, val] of tbl) if (p >= min) v = val;
+  return v;
+}
 /* ⚠️ MINE_CAP privalo būti > MINE_CLAIM_MIN. Slenkstį kėlus iki 1000 senasis cap=1000 reikštų, kad pot
  * kaupiasi lygiai iki nusiėmimo ribos ir NĖ VIENO RONKE daugiau: pasiekęs 1000 žaidėjas kastų į tuštumą,
  * o raido grobis virš cap'o tyliai dingtų (`Math.min(MINE_CAP, cur + steal)`). 2000 = 2× slenkstis. */
@@ -351,6 +395,9 @@ function stealPctFor(level: any): number {
  * bug'o, o dėl pasenusio lūkesčio — ir tikras regresas tokiame triukšme liktų nepastebėtas. */
 export const MINE_TUNABLES = {
   DUTY_BASE_H: MINE_DUTY_BASE_H, SAFE_BASE_H: MINE_SAFE_BASE_H,
+  // 🪜 08-31 v2: rate'ą lemia BE IŠIMČIŲ šitos dvi lentelės (ne bazės) — testai tikrina jas, ne skaičių kode.
+  TIERS_DUTY: MINE_TIERS_DUTY, TIERS_SAFE: MINE_TIERS_SAFE, TIER_MULT: MINE_TIER_MULT, POW_CAP: MINE_POW_CAP,
+  mineTierValue,
   SIEGE_STEP: MINE_SIEGE_STEP, CLAIM_MIN: MINE_CLAIM_MIN, CAP: MINE_CAP,
   STEAL_PCT: MINE_STEAL_PCT, BURN_PCT: MINE_BURN_PCT,
   // 🦴 ubgreidai už kaulus (08-30 v2)
@@ -2673,12 +2720,13 @@ export class F9PvpRoom extends Room<F9State> {
      * `mmined`. Luba čia = MINE_CAP backstop abiem režimam; SAFE stabdo _cemAccrue pagal mmined, ne pagal pot. */
     return MINE_CAP;
   }
-  // ⛏️ RONKE Power → RONKE/h su „knee": pirmi 250 power ×0.1, virš 250 ×0.05 (iki whale cap 4000).
-  private _minePowerTerm(hl: number): number {
-    const capped = Math.min(hl, MINE_POW_CAP);
-    const below = Math.min(capped, MINE_POWER_KNEE) * MINE_POWER_H;
-    const above = Math.max(0, capped - MINE_POWER_KNEE) * MINE_POWER_H * MINE_POWER_KNEE_MULT;
-    return below + above;
+  /* ⛏️🪜 BAZINIS rate iš pakopos (be Score daugiklio ir be skydo).
+   * Lentelės surašytos galutinėmis reikšmėmis su TOP 1%, tad dalinam iš 1.5 — tada TOP 1% žaidėjas
+   * gauna tiksliai lentelės skaičių, o kitos pakopos išsiveda savo daugikliu. Bazės (MINE_*_BASE_H)
+   * čia NEBEDALYVAUJA: nuo 08-31 v2 pati lentelė yra pilna reikšmė, kitaip SAFE ir DUTY vėl būtų
+   * surišti per bendrą dedamąją ir vieno kėlimas keltų kitą. */
+  private _mineTierH(hl: number, safe: boolean): number {
+    return Math.max(0, mineTierValue(Math.min(Math.max(0, hl), MINE_POW_CAP), safe) / MINE_TIER_MULT);
   }
   private _mineRateFrom(addr: string, onField: number, _reserve: number): number {
     const c = this._cem.get((addr || "").trim().toLowerCase());
@@ -2694,13 +2742,13 @@ export class F9PvpRoom extends Room<F9State> {
     //   dutyMult — SAFE=5/h, DUTY=10/h, + RONKE Power bonusas (knee @250). Lauko unitų kiekis nebekeičia
     //   rate (tik eligibility per _cemEligible). DUTY 10 == senas PILNO lauko DUTY rate — dalinis laukas
     //   nebebaudžiamas. (_onField/_reserve nebenaudojami — palikti parašo suderinamumui su _mineRate*.)
-    const base = (c && c.duty === "safe") ? MINE_SAFE_BASE_H : MINE_DUTY_BASE_H;
-    const powerTerm = this._minePowerTerm(hl);   // ⛏️ knee @250 (0.05/pt, virš 250 ×0.25)
+    const _safe = !!(c && c.duty === "safe");
+    const tierH = this._mineTierH(hl, _safe);   // 🪜 pakopa pagal REŽIMĄ (dvi atskiros lentelės)
     const shielded = addr === this._ownerAddr && (Number((this._buildings as any)?.shieldUntil) || 0) > Date.now();
     // 🏆 Ronke Score lojalumo daugiklis (08-13): top 1% ×1.5 · 5% ×1.25 · 10% ×1.15 · 25% ×1.10 · 50% ×1.05.
     //   Kešuota+fail-open (API triktis → ×1.0). Kasimas, ne kova — nedubliuoja Ronke Power.
     const scoreMult = scoreTierCached(addr).mult;
-    return (base + powerTerm) * (shielded ? 0.5 : 1) * scoreMult;   // 🛡 skydas kol aktyvus → ×0.5
+    return tierH * (shielded ? 0.5 : 1) * scoreMult;   // 🛡 skydas kol aktyvus → ×0.5
   }
   // Gyva rate (kambario state) — patikima TIK kai unitai spawninti (phase='playing').
   private _mineRate(addr: string): number {
@@ -2888,7 +2936,11 @@ export class F9PvpRoom extends Room<F9State> {
        * bet jokios juostos su REMOVE mygtuku: skaičius sako viena, ekranas kita.
        * `cemetery` siunčiama daug dažniau ir jau po krovimo, tad būsena nebegali prasilenkti. */
       shieldUntil: (addr === this._ownerAddr ? (Number((this._buildings as any)?.shieldUntil) || 0) : 0),
-      mpot: Math.round((c.mpot || 0) * 1000) / 1000, mmined: Math.round(Math.min((c as any).mcp || MINE_SIEGE_STEP, (c as any).mmined || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), msiege: (c as any).mcp || MINE_SIEGE_STEP, msiegeMax: siegeStepFor(MINE_CAP_UPG_MAX), mclaim: MINE_CLAIM_MIN,
+      mpot: Math.round((c.mpot || 0) * 1000) / 1000, mmined: Math.round(Math.min((c as any).mcp || MINE_SIEGE_STEP, (c as any).mmined || 0) * 1000) / 1000, mrate: Math.round(this._mineRateStored(addr) * 100) / 100, mcap: this._mineCap(addr), /* 🪜 PAKOPŲ lentelė klientui — modalas ją tik PIEŠIA, savo kopijos neturi. Kartu siunčiam
+       * daugiklį, su kuriuo ji surašyta (TOP 1%), ir bazes, kad klientas galėtų perskaičiuoti
+       * SAFE bei kitas Score pakopas nedarydamas jokių prielaidų. */
+      mtiers: MINE_TIERS_DUTY, mtiersSafe: MINE_TIERS_SAFE, mtierMult: MINE_TIER_MULT, mpowCap: MINE_POW_CAP,
+      msiege: (c as any).mcp || MINE_SIEGE_STEP, msiegeMax: siegeStepFor(MINE_CAP_UPG_MAX), mclaim: MINE_CLAIM_MIN,
       /* 🦴 UBGREIDAI — klientas iš to piešia abu mygtukus ir kainas (nieko nehardkodina savo pusėje). */
       mcapLvl: Math.max(0, Math.min(MINE_CAP_UPG_MAX, Number((this._buildings as any).mineCapLevel) || 0)), mcapMax: MINE_CAP_UPG_MAX, mcapCost: MINE_CAP_UPG_COST, mcapAdd: MINE_CAP_UPG_ADD,
       rgLvl: Math.max(0, Math.min(RAID_GUARD_MAX, Number((this._buildings as any).raidGuardLevel) || 0)), rgMax: RAID_GUARD_MAX, rgCost: RAID_GUARD_COST,

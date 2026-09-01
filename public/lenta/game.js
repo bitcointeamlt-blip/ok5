@@ -11259,6 +11259,26 @@ function _f9MinePowerTerm(p) {
   p = Math.max(0, Math.min(p || 0, _F9_MINE_POW_CAP));
   return Math.min(p, 250) * 0.05 + Math.max(0, p - 250) * 0.05 * 0.25;
 }
+/* 🪜 Kiek duotų PASIRINKTAS režimas prie dabartinio power — režimo mygtukams ir patvirtinimo langui.
+ * Grąžina null, jei serverio lentelės dar nėra (tada UI rodo seną „+N/h + power" formuluotę). */
+function _f9MineRateForMode(d, mode) {
+  const TBL = (mode === 'safe') ? d.tiersSafe : d.tiers;
+  if (!Array.isArray(TBL) || !TBL.length) return null;
+  const cap = (typeof d.powCap === 'number' && d.powCap > 0) ? d.powCap : _F9_MINE_POW_CAP;
+  const power = (typeof d.hpower === 'number' && d.hpower >= 0) ? d.hpower : _f9MinePowerNow();
+  const p = Math.max(0, Math.min(power || 0, cap));
+  let v = TBL[0][1];
+  for (let i = 0; i < TBL.length; i++) if (p >= TBL[i][0]) v = TBL[i][1];
+  return (v / (d.tierMult || 1.5)) * (d.smult || 1);
+}
+try { window._f9MineRateForMode = _f9MineRateForMode; } catch (_) {}
+/* Režimo mygtuko užrašas. Anksčiau čia buvo „+10/h +power" — bazė plius neapibrėžtas „power",
+ * ir žaidėjas negalėdavo palyginti režimų nepersijungęs. Dabar rodom KONKRETŲ savo greitį. */
+function _f9DutyBtnRate(d, mode) {
+  const r = _f9MineRateForMode(d, mode);
+  if (r == null) return '+' + ((mode === 'safe' ? d.dutySafeBase : d.dutyOnlineBase) || (mode === 'safe' ? 5 : 10)) + '/h +power';
+  return '+' + (r >= 10 ? r.toFixed(0) : r.toFixed(1)) + '/h';
+}
 function _f9MineRateNow() {
   const d = _f9MineData(); if (d.gated) return 0;
   // ⛏️ 07-16 (user): kasimas TIK jei pakanka unitų DABAR ANT LAUKO (ne registruotų). Atspindi serverio _mineEligible.
@@ -11267,9 +11287,20 @@ function _f9MineRateNow() {
   const fieldElig = (d.mineEligible != null) ? d.mineEligible
     : (((d.rv || 0) >= MR.aRv && fieldN >= MR.aField) || (fieldN >= MR.bField && (d.wallet || 0) >= MR.bWallet));
   if (!fieldElig) return 0;
-  // 🏁 FLAT rate — SAFE 5/h, DUTY 10/h, + RONKE Power (knee). Lauko unitų KIEKIS = gate (≥12), power = bonusas ant viršaus.
-  const base = (d.duty === 'safe') ? (d.dutySafeBase || _F9_MINE_SAFE_BASE_H) : (d.dutyOnlineBase || _F9_MINE_DUTY_BASE_H);
   const power = (typeof d.hpower === 'number' && d.hpower >= 0) ? d.hpower : _f9MinePowerNow();
+  /* 🪜 08-31 v2: greitį lemia serverio PAKOPŲ lentelė (DUTY ir SAFE turi po savo). Šita funkcija —
+   * tik atsarginis įvertis, kol serverio `rate` dar neatėjo, bet jis privalo sutapti su serveriu:
+   * anksčiau čia gyveno sava `bazė + knee` kopija, ir būtent tokios kopijos jau du kartus rodė
+   * žaidėjui vieną skaičių, o serveris skaičiavo kitą. Senoji formulė lieka tik jei lentelės nėra. */
+  const TBL = (d.duty === 'safe') ? d.tiersSafe : d.tiers;
+  if (Array.isArray(TBL) && TBL.length) {
+    const cap = (typeof d.powCap === 'number' && d.powCap > 0) ? d.powCap : _F9_MINE_POW_CAP;
+    const p = Math.max(0, Math.min(power || 0, cap));
+    let v = TBL[0][1];
+    for (let i = 0; i < TBL.length; i++) if (p >= TBL[i][0]) v = TBL[i][1];
+    return (v / (d.tierMult || 1.5)) * (d.smult || 1) * (d.shielded ? 0.5 : 1);
+  }
+  const base = (d.duty === 'safe') ? (d.dutySafeBase || _F9_MINE_SAFE_BASE_H) : (d.dutyOnlineBase || _F9_MINE_DUTY_BASE_H);
   return (base + _f9MinePowerTerm(power)) * (d.shielded ? 0.5 : 1);
 }
 function _f9MineEnsureState() {
@@ -11331,6 +11362,13 @@ function _f9MineData() {
     siegeMax: (m && m.siegeMax) || 0, capLvl: (m && m.capLvl) || 0, capMax: (m && m.capMax) || 0, capCost: (m && m.capCost) || 0, capAdd: (m && m.capAdd) || 0,
     rgLvl: (m && m.rgLvl) || 0, rgMax: (m && m.rgMax) || 0, rgCost: (m && m.rgCost) || 0,
     rgLossPct: (m && m.rgLossPct != null) ? m.rgLossPct : null, rgStealPct: (m && m.rgStealPct != null) ? m.rgStealPct : null, rgBurnPct: (m && m.rgBurnPct != null) ? m.rgBurnPct : null, rgStepPct: (m && m.rgStepPct) || 0,
+    /* 🪜 08-31: pakopų lentelė iš serverio → atlygių modalui. Be šito modalas neturi ką piešti
+     * ir tyliai nieko nedaro — būtent taip ir nutiko pirmą kartą. */
+    tiers: (m && Array.isArray(m.tiers) && m.tiers.length) ? m.tiers : null,
+    tiersSafe: (m && Array.isArray(m.tiersSafe) && m.tiersSafe.length) ? m.tiersSafe : null,
+    tierMult: (m && m.tierMult) || 1.5, powCap: (m && m.powCap) || 3500,
+    dutyBase: (m && typeof m.dutyBase === 'number') ? m.dutyBase : ((c && typeof c.dutyOnlineBase === 'number') ? c.dutyOnlineBase : 10),
+    safeBase: (m && typeof m.safeBase === 'number') ? m.safeBase : ((c && typeof c.dutySafeBase === 'number') ? c.dutySafeBase : 5),
     claimMin: (m && m.claimMin != null) ? +m.claimMin : _F9_MINE_CLAIM,   // 💸 withdraw slenkstis (500)
     nft: el('nft', 0), reg: el('reg', 0), hosp: el('hosp', 0), rv: el('rv', 0), wallet: el('wallet', 0),
     eligible: (m && m.eligible != null) ? !!m.eligible : !!c.eligible,   // eligibility iš cemetery kol serverio mine dar nėra
@@ -11467,6 +11505,103 @@ function _f9MineUpgHtml(d) {
         'How much a winning raider strips from your un-withdrawn RONKE.')
     + '</div>';
 }
+/* 🪜 ATLYGIŲ LENTELĖ (2026-08-31, user): paspaudus ant kasimo greičio atsiveria pilna pakopų
+ * lentelė. Pirma — DUTY + TOP 1% (tokia, kokia surašyta), po to AUTOMATINIAI perskaičiavimai
+ * SAFE režimui ir visoms Ronke Score pakopoms (1% / 5% / 10% / 25% / 50%).
+ *
+ * ⚠️ NIEKO nehardkodinam: pakopos, daugiklis, bazės ir cap ateina iš serverio cemetery payload'o
+ * (`mtiers`). Šiandien du kartus taisėm ekranus, kurie rodė savo kopijos skaičius — čia to
+ * nebegali atsitikti: jei serveris pakeis lentelę, modalas pasikeis kartu. */
+const _F9_SCORE_TIERS = [['TOP 1%', 1.5], ['TOP 5%', 1.25], ['TOP 10%', 1.15], ['TOP 25%', 1.1], ['TOP 50%', 1.05], ['no tier', 1]];
+function _f9RewardTableClose() {
+  const el = document.getElementById('f9-rewards-modal');
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
+function _f9ShowRewardTable() {
+  const d = (typeof _f9MineData === 'function') ? _f9MineData() : {};
+  const T = Array.isArray(d.tiers) && d.tiers.length ? d.tiers : null;
+  /* ⚠️ 08-31: jei serverio duomenų dar nėra, ANKSČIAU paspaudimas tyliai nieko nedarydavo ir atrodė
+   * kaip sugedęs mygtukas. Dabar visada atsiveria langas — arba lentelė, arba aiškus paaiškinimas. */
+  if (!T) {
+    _f9RewardTableClose();
+    const ov0 = document.createElement('div');
+    ov0.id = 'f9-rewards-modal';
+    ov0.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.93);z-index:100010;display:flex;align-items:center;justify-content:center;padding:18px;';
+    ov0.innerHTML = '<div style="background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;border-radius:9px;padding:18px 22px;max-width:420px;font-family:inherit;font-size:10px;line-height:1.7;color:#8a9aaa;">'
+      + '<div style="font-size:13px;color:#ffcf5c;margin-bottom:8px;">⛏️ MINING REWARDS</div>'
+      + 'The reward table comes from the server and has not arrived yet.<br><br>'
+      + '<span style="color:#6a7a8a;">This happens right after opening the game or if the connection dropped. Stay in your castle a moment and tap again.</span>'
+      + '<div style="margin-top:12px;text-align:right;"><button id="f9rw-x0" style="font-family:inherit;font-size:10px;padding:8px 14px;border-radius:6px;border:2px solid #ffcf5c;background:#ffcf5c;color:#1a1208;cursor:pointer;">OK</button></div></div>';
+    document.body.appendChild(ov0);
+    const x0 = ov0.querySelector('#f9rw-x0'); if (x0) x0.onclick = _f9RewardTableClose;
+    ov0.onclick = function (e) { if (e.target === ov0) _f9RewardTableClose(); };
+    return;
+  }
+  const MULT = d.tierMult || 1.5;
+  /* 🪜 08-31 v2: SAFE turi SAVO lentelę. Kol serveris jos nesiunčia (senas build'as) — SAFE sekcijos
+   * nerodom visai; anksčiau ji buvo skaičiuojama iš DUTY reikšmės per bendrą bazę, o po to, kai
+   * režimai atskirti, toks skaičiavimas duotų MELAGINGUS skaičius (SAFE atrodytų didesnis nei yra). */
+  const TS = Array.isArray(d.tiersSafe) && d.tiersSafe.length ? d.tiersSafe : null;
+  const myPow = (typeof d.hpower === 'number' && d.hpower >= 0) ? d.hpower : 0;
+  // lentelėse surašyta galutinė reikšmė su TOP 1% → kitai Score pakopai tiesiog persvarstom daugiklį
+  const rate = (v, m) => (v / MULT) * m;
+  // kurioje pakopoje esu ir kiek trūksta iki kitos
+  let cur = T[0], nxt = null;
+  for (const t of T) if (myPow >= t[0]) cur = t;
+  for (const t of T) if (t[0] > myPow) { nxt = t; break; }
+  _f9RewardTableClose();
+  const ov = document.createElement('div');
+  ov.id = 'f9-rewards-modal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(8,12,22,0.93);z-index:100010;display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(6px);';
+  /* Viena eilutė bet kuriai iš dviejų lentelių. `tint` = pagrindinio stulpelio spalva:
+   * DUTY žalia (agresyvus režimas), SAFE žydra — tos pačios spalvos kaip kasyklos skydelyje. */
+  /* Power stulpelis rodo TIK ribą (0 · 100 · 250 · 500 …), ne intervalą „100–249" (user 08-31:
+   * „nereikia gilaus tikslumo, užtenka grubiai"). Apvalinimo taisyklė ir taip parašyta viršuje. */
+  const rowFor = (TBL, tint) => (t, i) => {
+    const hi = t[0] === cur[0];
+    return '<tr style="' + (hi ? 'background:rgba(255,207,92,0.13);' : '') + '">'
+      + '<td style="padding:8px 11px;color:' + (hi ? '#ffcf5c' : '#cfd8e8') + ';white-space:nowrap;">' + (hi ? '▸ ' : '') + t[0] + '</td>'
+      + '<td style="padding:8px 11px;text-align:right;color:' + (hi ? '#ffcf5c' : tint) + ';"><b>' + t[1] + '</b></td>'
+      + _F9_SCORE_TIERS.slice(1).map(function (st) { return '<td style="padding:8px 11px;text-align:right;color:#8a9aaa;">' + rate(t[1], st[1]).toFixed(0) + '</td>'; }).join('')
+      + '</tr>';
+  };
+  const tableFor = (TBL, tint) =>
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+    + '<thead><tr style="color:#6a7a8a;">'
+      + '<th style="padding:8px 11px;text-align:left;">RONKE POWER</th>'
+      + '<th style="padding:8px 11px;text-align:right;color:' + tint + ';">TOP 1%</th>'
+      + _F9_SCORE_TIERS.slice(1).map(function (st) { return '<th style="padding:8px 11px;text-align:right;">' + st[0] + '</th>'; }).join('')
+    + '</tr></thead><tbody>' + TBL.map(rowFor(TBL, tint)).join('') + '</tbody></table>';
+  const section = (icon, title, sub, TBL, tint) =>
+    '<div style="margin-bottom:14px;">'
+    + '<div style="font-size:13px;color:' + tint + ';letter-spacing:1.2px;margin-bottom:5px;">' + icon + ' ' + title
+      + ' <span style="font-size:10px;color:#6a7a8a;letter-spacing:0;">' + sub + '</span></div>'
+    + tableFor(TBL, tint) + '</div>';
+  ov.innerHTML =
+    '<div style="background:linear-gradient(180deg,#1f2940 0%,#0c1020 100%);border:3px solid #ffcf5c;border-radius:10px;padding:22px 26px;width:900px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;font-family:inherit;font-size:12px;color:#8a9aaa;">'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding-bottom:9px;border-bottom:1px solid #4a3a18;">'
+      + '<span style="font-size:24px;">⛏️</span>'
+      + '<span style="flex:1;font-size:17px;color:#ffcf5c;letter-spacing:1.5px;">MINING REWARDS</span>'
+      + '<button id="f9rw-x" style="background:none;border:none;color:#8a9aaa;font-size:26px;cursor:pointer;font-family:inherit;line-height:1;padding:0 6px;">×</button>'
+    + '</div>'
+    + '<div style="font-size:11px;color:#8a9aaa;line-height:1.8;margin-bottom:12px;">Your Ronke Power rounds <b style="color:#cfd8e8;">down</b> to the nearest step. '
+      + 'You are at <b style="color:#ffcf5c;">' + myPow + '</b> power &rarr; step <b style="color:#ffcf5c;">' + cur[0] + '</b>'
+      + (nxt ? ' &nbsp;·&nbsp; <span style="color:#8fd47c;">+' + (nxt[0] - myPow) + ' power to reach ' + nxt[1] + '/h</span>' : ' &nbsp;·&nbsp; <span style="color:#8fd47c;">MAX step</span>') + '</div>'
+    + '<div style="overflow:auto;flex:1 1 auto;min-height:80px;">'
+      + section('⚔', 'ON DUTY', '— no cycle cap, but your castle is a target', T, '#8fd47c')
+      + (TS ? section('🛡', 'SAFE', '— cannot be raided, stops at ' + (d.siegeStep || 200) + ' per cycle', TS, '#7fd0d8') : '')
+    + '</div>'
+    + '<div style="font-size:10px;color:#6a7a8a;line-height:1.8;margin-top:12px;padding-top:11px;border-top:1px solid #2a3a4a;">'
+      + 'All numbers are RONKE/h. <b style="color:#8fd47c;">DUTY</b> pays about '
+      + (TS ? (T[T.length - 1][1] / TS[TS.length - 1][1]).toFixed(1) + '&times;' : 'much') + ' more than <b style="color:#7fd0d8;">SAFE</b>, '
+      + 'but a raider can take your mined RONKE and every fallen unit risks permadeath. '
+      + 'An active <b style="color:#7ab8e8;">🛡 post-raid shield halves</b> whatever you see here for one hour.'
+    + '</div></div>';
+  document.body.appendChild(ov);
+  const x = ov.querySelector('#f9rw-x'); if (x) x.onclick = _f9RewardTableClose;
+  ov.onclick = function (e) { if (e.target === ov) _f9RewardTableClose(); };
+}
+try { window._f9ShowRewardTable = _f9ShowRewardTable; } catch (_) {}
 function _f9MinePanelStats() {
   if (!_f9MinePanelEl) return;
   const d = _f9MineData();
@@ -11570,15 +11705,15 @@ function _f9MinePanelStats() {
       (!mineElig ? '<div style="display:flex;align-items:center;gap:9px;margin:0 0 10px;padding:9px 13px;border-radius:7px;border:1px solid #2a6a74;background:rgba(74,157,166,0.10);"><span style="font-size:14px;">🛡</span><span style="flex:1;font-size:9px;line-height:1.6;color:#7fd0d8;">Under <b>' + MR.aField + ' units on the field</b> — mining is OFF, but <b>nobody can raid you</b> either.</span></div>' : '') +
       '<div style="display:flex;gap:8px;margin-bottom:10px;">' +
         '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid #3a3a55;border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">RONKE BALANCE</div><div style="font-size:24px;color:' + (full ? '#ff6b6b' : '#ffcf5c') + ';text-shadow:0 0 12px rgba(255,207,92,0.5);">⛏️ ' + est.toFixed(2) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.duty === 'safe' ? (d.gated ? '🗡 PVP REQUIRED' : 'cycle ' + Math.round(_sieMined) + ' / ' + step) : (full ? '⛏️ at backstop — withdraw' : '🟢 no mining limit')) + '</div></div>' +
-        '<div style="flex:1;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING</div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (mineElig ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (mineElig ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (!mineElig ? '⚔ ' + fieldN + ' / ' + MR.aField + ' units on field' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power'))) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
+        '<div id="f9mine-rates" title="Tap to see the full reward table for every Ronke Power step" style="flex:1;cursor:pointer;background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.gated ? '#7a3a3a' : (d.shielded ? '#2a5a8a' : '#3a3a55')) + ';border-radius:7px;padding:13px 12px;text-align:center;"><div style="font-size:9px;color:#6a7a8a;letter-spacing:1px;margin-bottom:6px;">MINING <span style="color:#ffcf5c;">⛏ TABLE</span></div><div style="font-size:24px;color:' + (d.gated ? '#ff6b6b' : (mineElig ? '#6fcf5c' : '#8a9aaa')) + ';">' + (d.gated ? '🔒 LOCKED' : (mineElig ? (d.rate > 0 ? '+' + d.rate.toFixed(1) + '/h' : 'ON') : 'OFF')) + '</div><div style="font-size:8px;color:#6a7a8a;margin-top:5px;">' + (d.gated ? '🗡 win a PvP match to resume' : (!mineElig ? '⚔ ' + fieldN + ' / ' + MR.aField + ' units on field' : (d.onField >= 0 ? '⚔ ' + d.onField + ' units on field' : 'speed &prop; field power'))) + (d.shielded ? ' · <span style="color:#7ab8e8;">🛡×0.5</span>' : '') + '</div></div>' +
       '</div>' +
       // ⚔️🛡 DUTY STATUS jungiklis — ON DUTY (greitas + puolamas) / SAFE (lėtas + apsaugotas). Keisti tik ramiuose namuose.
       '<div style="background:linear-gradient(180deg,#14182a,#0a0c18);border:2px solid ' + (d.duty === 'safe' ? '#2a6a74' : '#7a5a1e') + ';border-radius:7px;padding:11px 13px;margin-bottom:10px;">' +
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px;"><span style="font-size:11px;letter-spacing:1px;color:#c9d4e8;">⚔️ DUTY STATUS</span>' +
           '<span style="flex:1;"></span><span style="font-size:9px;padding:2px 8px;border-radius:4px;background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.2)' : 'rgba(255,207,92,0.18)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#ffcf5c') + ';">' + (d.duty === 'safe' ? '🛡 SAFE' : '🟢 ON DUTY') + '</span></div>' +
         '<div style="display:flex;gap:8px;">' +
-          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>+' + (d.dutyOnlineBase || 10) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">raidable · no mining limit</span></button>' +
-          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:' + (dutyLocked ? 'not-allowed' : 'pointer') + ';border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';opacity:' + (dutyLocked ? '0.5' : '1') + ';">🛡 SAFE<br><b>+' + (d.dutySafeBase || 5) + '/h +power</b><br><span style="font-size:8px;opacity:.8;">' + (dutyLocked ? '🔒 on duty ' + dutyLockMin + 'm left' : 'protected · you attack to unlock') + '</span></button>' +
+          '<button data-duty="online" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:pointer;border:2px solid ' + (d.duty === 'online' ? '#ffcf5c' : '#3a3a55') + ';background:' + (d.duty === 'online' ? 'rgba(255,207,92,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'online' ? '#ffcf5c' : '#8a9aaa') + ';">🟢 ON DUTY<br><b>' + _f9DutyBtnRate(d, 'online') + '</b><br><span style="font-size:8px;opacity:.8;">raidable · no mining limit</span></button>' +
+          '<button data-duty="safe" style="flex:1;font-family:inherit;font-size:9px;line-height:1.4;padding:9px 6px;border-radius:6px;cursor:' + (dutyLocked ? 'not-allowed' : 'pointer') + ';border:2px solid ' + (d.duty === 'safe' ? '#4a9da6' : '#3a3a55') + ';background:' + (d.duty === 'safe' ? 'rgba(74,157,166,0.14)' : 'rgba(255,255,255,0.03)') + ';color:' + (d.duty === 'safe' ? '#7fd0d8' : '#8a9aaa') + ';opacity:' + (dutyLocked ? '0.5' : '1') + ';">🛡 SAFE<br><b>' + _f9DutyBtnRate(d, 'safe') + '</b><br><span style="font-size:8px;opacity:.8;">' + (dutyLocked ? '🔒 on duty ' + dutyLockMin + 'm left' : 'protected · you attack to unlock') + '</span></button>' +
         '</div>' +
         dutyInfo +
         '<div id="f9mine-dutymsg" style="margin-top:6px;font-size:8px;min-height:10px;color:#e8a08a;text-align:center;"></div>' +
@@ -11600,6 +11735,8 @@ function _f9MinePanelStats() {
       _f9MineUpgHtml(d) +
       '<div id="f9mine-wdmsg" style="margin-top:8px;font-size:9px;line-height:1.5;color:#7cff6e;letter-spacing:0.3px;text-align:center;">' + (_f9MineWdMsg || '') + '</div>';
   }
+  const _rt = _f9MinePanelEl.querySelector('#f9mine-rates');
+  if (_rt) _rt.onclick = function () { try { _f9ShowRewardTable(); } catch (_) {} };
   const _ucap = _f9MinePanelEl.querySelector('#f9mine-upgcap');
   if (_ucap) _ucap.onclick = function () {
     if (_ucap.disabled) return; _ucap.disabled = true; _ucap.style.opacity = '.6';
@@ -11624,8 +11761,12 @@ function _f9MinePanelStats() {
   if (_f9MineWdMsg) { const ml = _f9MinePanelEl.querySelector('#f9mine-wdmsg'); if (ml) ml.textContent = _f9MineWdMsg; }
   const cnt = _f9MinePanelEl.querySelector('#f9mine-counter');
   if (cnt) {   // badge = COMBAT-READY power (kovai pajėgių unitų; mirę/sužaloti NEsiskaito — todėl ≠ total RP)
-    cnt.textContent = '⚔ ' + Math.round(_f9MinePowerNow()) + ' pwr';
-    try { cnt.title = 'Combat-ready mining power (healthy units only). Dead/injured units don\'t count — this is why it can differ from your total RONKE Power.'; } catch (_) {}
+    /* 🪜 08-31 (user): „nuėjęs į Ronke Mine ir paspaudęs ant PWR — niekas nevyksta". Būtent šitas
+     * ženkliukas ir yra tas PWR. Dabar jis atidaro pilną atlygių lentelę su visomis pakopomis. */
+    cnt.textContent = '⚔ ' + Math.round(_f9MinePowerNow()) + ' pwr  ⛏';
+    cnt.style.cursor = 'pointer';
+    try { cnt.title = 'Combat-ready mining power (healthy units only). Dead/injured units don\'t count — this is why it can differ from your total RONKE Power.\n\nTap to see the full reward table for every power step.'; } catch (_) {}
+    cnt.onclick = function () { try { _f9ShowRewardTable(); } catch (_) {} };
   }
 }
 function _f9CloseMinePanel() {
@@ -11665,7 +11806,12 @@ function _f9DutyDoSet(mode) {
 function _f9DutyConfirmModal(mode, lockedNow, lockMin) {
   try { var _old = document.getElementById('f9-duty-confirm'); if (_old) _old.remove(); } catch (_) {}
   const C = window._f9Cemetery || {};
-  const onlineH = C.dutyOnlineBase || 10, safeH = C.dutySafeBase || 5;
+  /* 🪜 08-31 v2: rodom TIKRĄ savo greitį abiem režimais (iš serverio pakopų lentelių), o ne bazes.
+   * Sprendimas „ar verta rizikuoti" priklauso nuo skirtumo, tad jis turi būti matomas iš karto. */
+  const _dd = (typeof _f9MineData === 'function') ? _f9MineData() : {};
+  const _ro = _f9MineRateForMode(_dd, 'online'), _rs = _f9MineRateForMode(_dd, 'safe');
+  const onlineH = (_ro != null) ? Math.round(_ro) : (C.dutyOnlineBase || 10);
+  const safeH = (_rs != null) ? Math.round(_rs) : (C.dutySafeBase || 5);
   let title, accent, body, actionsHtml;
   const _cancelBtn = '<button id="f9duty-cancel" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #3a3a55;background:rgba(255,255,255,0.04);color:#8a9aaa;cursor:pointer;">CANCEL</button>';
   if (lockedNow) {
@@ -11677,7 +11823,7 @@ function _f9DutyConfirmModal(mode, lockedNow, lockMin) {
   } else if (mode === 'online') {
     title = '🟢 Switch to ON DUTY?'; accent = '#ffcf5c';
     body = '<div style="text-align:left;line-height:1.9;">' +
-      '✅ Mine <b style="color:#ffcf5c;">faster</b> (+' + onlineH + '/h + power), no checkpoint pauses.<br>' +
+      '✅ Mine <b style="color:#ffcf5c;">faster</b> — <b>+' + onlineH + '/h</b> instead of +' + safeH + '/h, and no checkpoint pauses.<br>' +
       '⚔️ Your castle becomes <b style="color:#ff9a6a;">RAIDABLE</b> — other players can attack it.<br>' +
       '💀 If a raider beats you, they steal <b style="color:#ff9a6a;">50%</b> of your un-withdrawn RONKE.<br>' +
       '🔒 You <b style="color:#ffcf5c;">commit for 10 min</b> — you can\'t switch back to SAFE until then.' +
@@ -11687,7 +11833,7 @@ function _f9DutyConfirmModal(mode, lockedNow, lockMin) {
     title = '🛡 Switch to SAFE?'; accent = '#7fd0d8';
     body = '<div style="text-align:left;line-height:1.9;">' +
       '🛡 <b style="color:#7fd0d8;">Protected</b> — nobody can raid your mined RONKE.<br>' +
-      '🐢 Mine <b>slower</b> (+' + safeH + '/h + power).<br>' +
+      '🐢 Mine <b>slower</b> — <b>+' + safeH + '/h</b> instead of +' + onlineH + '/h.<br>' +
       '⏸ Mining <b>pauses</b> at each checkpoint until you start a PvP match yourself.' +
       '</div>';
     actionsHtml = '<button id="f9duty-go" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #4a9da6;background:#4a9da6;color:#06121a;cursor:pointer;">🛡 GO SAFE</button>' + _cancelBtn;
