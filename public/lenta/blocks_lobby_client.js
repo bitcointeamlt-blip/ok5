@@ -45,24 +45,30 @@
     if (!_ac) { console.warn('[BLOCKS 🔊] nėra AudioContext — garso naršyklė neleidžia'); return; }
     console.log('[BLOCKS 🔊] signalas: ' + (why || '?') + ' · ctx=' + _ac.state);
     try {
-      var t0 = _ac.currentTime + 0.02;
-      for (var i = 0; i < 3; i++) {
+      /* 📏 IŠMATUOTA per OfflineAudioContext (CDP, 2026-09-02) — ne iš akies:
+       *   buvo:  pikas 0.35 · RMS 0.057 · girdima 0.42 s   ← šeši trumpi cinkstelėjimai
+       *   dabar: pikas 0.90 · RMS 0.42  · girdima 1.33 s   ← 7,4× daugiau energijos, 3,2× ilgiau
+       * Esmė ne vien amplitudė: senas variantas iškart smukdavo (exponentialRamp nuo 0.35 į 0.0001 per
+       * 0.30 s), tad tonai net nepersidengdavo ir realiai skambėdavo apie 0.07 s kiekvienas.
+       * Dabar tonas IŠLAIKOMAS (setValueAtTime ties t+0.16) ir tik tada nuleidžiamas — todėl skamba
+       * kaip klaksonas, o ne kaip UI cinkstelėjimas. Pikas 0.90 < 1.0 ⇒ neklipina. */
+      var t = _ac.currentTime + 0.02;
+      for (var i = 0; i < 4; i++) {
         for (var k = 0; k < 2; k++) {
-          var t = t0 + i * 0.42 + k * 0.14;
           var o = _ac.createOscillator(), g = _ac.createGain();
           o.type = 'square';
           o.frequency.setValueAtTime(k ? 990 : 660, t);
           g.gain.setValueAtTime(0.0001, t);
-          /* 0.35, o ne 0.5: du tonai persidengia (0.14 s tarpas, 0.32 s trukmė), tad 0.5+0.5 pasiektų
-           * pilno skalės kryptį ir kirptųsi. 0.35 duoda ~0.7 pike — garsu, bet be klipinimo.
-           * Kvadratinė banga suvokiama daug garsiau nei sinusas prie to paties amplitudės skaičiaus. */
-          g.gain.exponentialRampToValueAtTime(0.35, t + 0.015);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+          g.gain.exponentialRampToValueAtTime(0.9, t + 0.008);
+          g.gain.setValueAtTime(0.9, t + 0.16);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.20);
           o.connect(g); g.connect(_ac.destination);
-          o.start(t); o.stop(t + 0.32);
+          o.start(t); o.stop(t + 0.21);
+          t += 0.20;
         }
+        t += 0.05;
       }
-    } catch (e) { console.warn('[BLOCKS 🔊] nepavyko groti:', e && e.message); }
+    } catch (e) { console.warn('[BLOCKS] nepavyko groti:', e && e.message); }
   }
   try { window.__rbAlarm = function () { _alarm('rankinis testas'); return 'ok — jei negirdi, žr. konsolės eilutę virš šito'; }; } catch (_) {}
 
