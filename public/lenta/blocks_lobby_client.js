@@ -9,6 +9,58 @@
 (function () {
   if (window.BlocksLobby) return;
 
+  /* 🔊 „VARŽOVAS ATSIRADO" SIGNALAS (2026-09-02, user: „loud sound when someone accepted a tetris battle").
+   *
+   * KODĖL SAVAS, o ne `Sfx`: čia jau buvo DU `window.Sfx.play('notify')` kvietimai, bet jie NIEKADA
+   * nesuveikdavo. `Sfx` gyvena `tetris/js/audio.js`, kuris kraunamas TIK žaidimo iframe'e; šis failas
+   * sukasi TĖVINIAME lenta puslapyje, kur `window.Sfx` yra undefined — o kvietimai apgaubti
+   * `try{ if (window.Sfx && ...) }`, tad tyliai nieko nedarydavo ir niekas to nepastebėjo.
+   * Todėl garsą generuojam patys per WebAudio: jokio failo, jokio krovimo, veikia ir tada, kai iframe
+   * dar net neatidarytas (lobis rodomas pilyje, žaidimas kraunamas paslėptas).
+   *
+   * GARSAS: trys kylantys dvitoniai „klaksonai" (660→990 Hz, square) — sąmoningai skvarbūs, nes visas
+   * scenarijus yra „gali užsidaryti panelę ir toliau žaisti", t. y. žaidėjas žiūri kitur.
+   *
+   * 🔇 Gerbiam `lenta_muted` — nutildęs žaidimą žaidėjas negauna ir šito.
+   * 🔓 Autoplay: naršyklė leidžia garsą tik po vartotojo gesto, o kambarį sukūręs žaidėjas jau spaudė —
+   *    kontekstą sukuriam/atrakiname per pirmą gestą, kad vėliau, kai varžovas atsiras, `resume()`
+   *    nebereikėtų gesto. Be šito signalas vėl būtų tylus — lygiai kaip senasis Sfx kelias. */
+  var _ac = null;
+  function _acUnlock() {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      if (!_ac) _ac = new AC();
+      if (_ac.state === 'suspended') _ac.resume().catch(function () {});
+    } catch (_) {}
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
+    try { window.addEventListener(ev, _acUnlock, { once: true, passive: true }); } catch (_) { window.addEventListener(ev, _acUnlock); }
+  });
+  function _alarm() {
+    try { if (localStorage.getItem('lenta_muted') === '1') return; } catch (_) {}
+    _acUnlock();
+    if (!_ac) return;
+    try {
+      var t0 = _ac.currentTime + 0.02;
+      for (var i = 0; i < 3; i++) {
+        for (var k = 0; k < 2; k++) {
+          var t = t0 + i * 0.42 + k * 0.14;
+          var o = _ac.createOscillator(), g = _ac.createGain();
+          o.type = 'square';
+          o.frequency.setValueAtTime(k ? 990 : 660, t);
+          g.gain.setValueAtTime(0.0001, t);
+          /* 0.35, o ne 0.5: du tonai persidengia (0.14 s tarpas, 0.32 s trukmė), tad 0.5+0.5 pasiektų
+           * pilno skalės kryptį ir kirptųsi. 0.35 duoda ~0.7 pike — garsu, bet be klipinimo.
+           * Kvadratinė banga suvokiama daug garsiau nei sinusas prie to paties amplitudės skaičiaus. */
+          g.gain.exponentialRampToValueAtTime(0.35, t + 0.015);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+          o.connect(g); g.connect(_ac.destination);
+          o.start(t); o.stop(t + 0.32);
+        }
+      }
+    } catch (_) {}
+  }
+
   var POLL_MS = 8000, PANEL_POLL_MS = 2500;
   var _timer = null, _colyseusLoading = null, _client = null, _running = false;
   var _waitingRooms = [], _lastCount = 0;
@@ -1509,7 +1561,9 @@
     if (goAi) goAi.onclick = function () { _aiPlayFlag = true; if (go) go.onclick(); };
     // 📶 GYVAS signalas — kartojasi kas 3s (kad matytųsi ar bus lagas prieš prisijungiant), ne vienkartinis
     if (mode === 'ready') _startSignalLoop();
-    try { if (window.Sfx && window.Sfx.play && mode === 'ready') window.Sfx.play('notify'); } catch (_) {}
+    /* 🔇 ČIA GARSO NĖRA SĄMONINGAI: `mode === 'ready'` yra MANO ekranas, kai AŠ atidarau kvietimo
+     * nuorodą („prisijungi prie X mačo — CONNECT WALLET / GO“). Žaidėjas žiūri į ekraną, tad klaksonas
+     * būtų ne laiku. Signalas skirtas tik momentams, kai KITAS žmogus priėmė/atsirado — žr. _alarm kvietimus. */
   }
   function _showInviteConfirm(roomId, tries) {
     tries = tries || 0;
@@ -1624,7 +1678,7 @@
     d.style.display = 'flex';
     d.querySelector('#rb-acc').onclick = function () { _challengeAck = true; _hideChallenge(); _cmd('accept'); };   // reveal ateis su state=countdown
     d.querySelector('#rb-dec').onclick = function () { _challengeAck = true; _hideChallenge(); _cmd('decline'); if (_bgActive) _showHostPill(); };
-    try { if (window.Sfx && window.Sfx.play) window.Sfx.play('notify'); } catch (_) {}
+    _alarm();   // 🔊 kas nors priėmė mūšį → garsus signalas (žaidėjas gali būti nuėjęs į kitą langą)
   }
   function _hideChallenge() { var d = document.getElementById('rb-challenge'); if (d) d.style.display = 'none'; }
   function _hideGame() {
@@ -1659,10 +1713,14 @@
     if (d.wagerPrize) { _wagerWin(d.wagerPrize, d.wagerPot); }
     if (d.rankAnim) { setTimeout(function () { _showRankAnim(d.rankAnim); }, 60); }   // 🎬 reitingo šou IŠKART (žaidimo skydas ranked mače nerodomas)
     if (d.xpReport) { _xpReport = d.xpReport; }   // 🎖️ rodysim uzdarius rank kortele (claim → ⛓ per edge fn, ne per kambarį)
+    var _prevSt = _lastState;   // 🔊 reikia PERĖJIMO, ne būsenos — žinutės kartojasi
     var st = d.state; _lastState = st;
     if (st && st !== 'challenge') _challengeAck = false;   // paliko challenge būseną → kitą kartą (naujas varžovas) vėl rodom
     if (d.myRoomId != null) _myRoomId = d.myRoomId;   // MANO kambarys → nerodom sąraše (negaliu prisijungti prie savęs)
     if (_panel && st !== 'lobby') _renderList();       // perpiešiam sąrašą be savo kambario
+    if ((st === 'prep' || st === 'countdown') && (_prevSt === 'awaiting' || _prevSt === 'connecting')) {
+      _alarm();   // 🔊 MANO iššūkį PRIĖMĖ („Challenge sent — waiting…“ → mačas) — galiu būti nuėjęs į kitą langą
+    }
     if (st === 'prep' || st === 'countdown' || st === 'playing' || st === 'result') {
       if (!_podClaimedMatch && st !== 'result') { _podClaimedMatch = true; _podClaimPlay(); }   // 🏆 PoD: sužaistas žaidimas → player-signed claim
       _hideInviteOverlay();            // 🎓 pasiruošimas prasidėjo → nuimam invite ekraną (jei buvo)
