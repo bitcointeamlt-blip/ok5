@@ -332,6 +332,27 @@ export class BlocksRoom extends Room<BlocksState> {
       if (client.sessionId === this.hostSession) this.hostSession = "";
       return;
     }
+    // ⏱️ COUNTDOWN — mačas dar NEPRASIDĖJO: nė viena figūra nenukrito, tad išėjimas čia NĖRA
+    //    pralaimėjimas. Iki 2026-09-02 tai buvo VIENINTELĖ spraga ankstyvame return'e —
+    //    lobby/challenge/staking/prep buvo apsaugotos, o countdown ne, todėl išėjimas per tas
+    //    3 sekundes krisdavo tiesiai į `_winByLeave`.
+    //    📊 IŠMATUOTA (Supabase blocksmatch_, 7 d.): 13 mačų baigėsi per 1,9–12,5 s nuo `started`
+    //    įrašo, o `started` rašomas `_beginPrep()` PRADŽIOJE — prieš PREP_MS + COUNTDOWN_MS.
+    //    Vadinasi nė vienas tų žaidėjų nematė nė vienos krentančios figūros, bet prarado statymą
+    //    ir ★. Suma: 500 RONKE / 2 žaidėjai; 11 iš 13 — prieš AI.
+    //    Elgesys toks pat kaip prep: statymas grąžinamas ABIEM, reitingas NELIEČIAMAS.
+    if (this.state.phase === "countdown") {
+      console.log(`[BLOCKS] ⏱️ žaidėjas išėjo per countdown — mačas atšaukiamas, ne pralaimimas (room=${this.roomId})`);
+      try { this.state.players.delete(client.sessionId); } catch {}
+      if (client.sessionId === this.hostSession) this.hostSession = "";
+      // ⚠️ `_abortWager` pats išvalo laikmačius, uždaro fazę į „lobby" ir grąžina abiem, tad
+      //    countdown ciklas (`_tick`, sąlyga `phase === "countdown"`) natūraliai sustoja.
+      if (this.escrow.active) { void this._abortWager("countdown_left"); return; }
+      // (fazė čia garantuotai „countdown", tad `!== "over"` tikrinti nereikia — tsc tai ir pasako)
+      this.state.phase = "lobby";
+      this._relist("žaidėjas išėjo per countdown");
+      return;
+    }
     // 🤖 AI valdoma pusė: žaidėjas gali IŠEITI — jo botas pabaigia mačą (lago/AFK imunitetas).
     //   Jokio pralaimėjimo; state.players įrašo NEtrinam (vardai/lines reikalingi iki galo).
     const leftSide = this.sideOf[client.sessionId];
@@ -339,8 +360,15 @@ export class BlocksRoom extends Room<BlocksState> {
       console.log(`[BLOCKS AI] ${leftSide} žaidėjas išėjo — jo AI pabaigia mačą (room=${this.roomId})`);
       return;
     }
-    // Rungtynėse: sąmoningas išėjimas → iškart pralaimėjimas; kitaip 8s reconnect.
-    if (consented) { this._winByLeave(client); return; }
+    // Rungtynėse: TAS PATS 8 s persijungimo langas ir „sąmoningam", ir netikėtam išėjimui.
+    //    BUVO: `if (consented) { this._winByLeave(client); return; }` — momentinis pralaimėjimas.
+    //    Kodėl tai klaida: telefone „sąmoningas" išėjimas įvyksta ne tik paspaudus „išeiti“ —
+    //    naršyklei nuėjus į foną (persijungus į Ronin piniginės app'ą) ir kai klientas jungiasi
+    //    į NAUJĄ kambarį dar būdamas sename. Žaidėjas tokio ketinimo neturėjo, o rezultatas
+    //    buvo galutinis. Būtent dėl to skundas „Tetris paėmė ★ ir RONKE dėl nepavykusių startų“.
+    //    Kaina: pasidavus varžovas laukia iki 8 s. Negrįžus rezultatas TOKS PAT kaip anksčiau —
+    //    `_winByLeave`, tik ne akimirksniu. Nepelnyto pralaimėjimo kaina buvo didesnė.
+    if (consented) console.log(`[BLOCKS] žaidėjas išėjo sąmoningai — duodam 8 s grįžti (room=${this.roomId})`);
     try { await this.allowReconnection(client, 8); }
     catch { this._winByLeave(client); }
   }
