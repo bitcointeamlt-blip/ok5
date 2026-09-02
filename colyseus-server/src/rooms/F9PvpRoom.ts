@@ -3668,6 +3668,16 @@ export class F9PvpRoom extends Room<F9State> {
       console.log(`[F9PvpRoom] 🚫 raid atmestas — puolikas ${atk.slice(0, 10)}… turi ${ready}/${RAID_FIELD_REQ} kovai pajėgių unitų`);
       throw new Error("WEAK_SQUAD:" + ready + ":" + RAID_FIELD_REQ);
     }
+    /* ⚔️🔢 LAUKO RIBA, NE TIK DEKO (2026-09-02, user: „vyksta kovos su 2 unitais ir tai nusižengia taisyklėms").
+     * Aukščiau esantis tikrinimas žiūri, kiek kovai pajėgių unitų žaidėjas TURI (dekas). Kiek jų realiai
+     * IŠEINA į lauką, lėmė `_activeCount` — o jį atsiunčia PATS KLIENTAS (`joinOpts.active`, f9_pvp_net.js
+     * raidPlayer) ir `_clampActive` priima 1..12. Gynėjui riba matuojama LAUKE (`_onFieldNow`, žr. live gate),
+     * puolikui tokios nebuvo — todėl 08-19 fiksas buvo apeinamas: dekas 12 → vartai praleidžia → išvedi 1
+     * unitą → jį pameti → `atkCasualtyPct = 1/1 = 100%` ⇒ kasimo ciklas nusinulina ABIEM, nors mūšyje
+     * nukentėjo vienas unitas. Istorijoje 101 toks raidas (9 jau PO 08-19 fikso), pigiausias — 1 auka per 46 s.
+     * DABAR: raide kliento pageidavimas neturi galios — visada MAX_ACTIVE. Namų gynybos tai NEliečia
+     * (ten „laisvė palikti tik 1" lieka, 07-06 user) — šis metodas kviečiamas TIK iš dviejų raido kelių. */
+    this._activeCount.set(client.sessionId, MAX_ACTIVE);
   }
   private _checkRaidGate(atkAddrRaw: string) {
     const atk = String(atkAddrRaw || "").trim().toLowerCase();
@@ -3766,11 +3776,18 @@ export class F9PvpRoom extends Room<F9State> {
       const casualtyPct = defTotal > 0 ? defElim / defTotal : 0;
       const atkCasualtyPct = atkTotal > 0 ? atkElim / atkTotal : 0;
       const fullWipe = defTotal > 0 && defElim === defTotal;
+      /* ⛏️🔢 SIEGE vardiklis NIEKADA nemažesnis nei RAID_FIELD_REQ (2026-09-02). Antras diržas prie
+       * `_checkRaiderSquad` fikso: net jei kuri nors pusė dėl bet kokios priežasties neišstatytų 12
+       * (nespėjo spawn'intis, dev unitai atfiltruoti, ateities kodo kelias), „50% aukų" ir toliau reiškia
+       * 6 REALIUS unitus, o ne pusę to, kiek žaidėjas nusprendė atsivesti. SKYDUI ir GROBIUI (`casualtyPct`,
+       * `fullWipe`) taikom SENĄ tikrą proporciją — ten klausimas „ar mano pilis nusiaubta", ne „ar buvo mūšis". */
+      const _siegeDefPct = defElim / Math.max(defTotal, RAID_FIELD_REQ);
+      const _siegeAtkPct = atkElim / Math.max(atkTotal, RAID_FIELD_REQ);
       // ⛏️🗡 SIEGE UŽSKAITYMAS (07-14 user): kvalifikuotas PvP mūšis (bet kuri pusė ≥50% aukų) atrakina kasimą
       //   ABIEM dalyviam (puolikui IR gynėjui), ABIEM režimam. Jei buvo gated → gated=false + checkpoint +200.
       //   Raidas = gynėjo mūšis (DUTY „mūšis ateina pas tave"); safe puolikas inicijuoja pats.
-      if ((casualtyPct >= DUTY_SIEGE_CASUALTY || atkCasualtyPct >= DUTY_SIEGE_CASUALTY) && this._raidAtkAddr) {
-        const _qualified = Math.round(Math.max(casualtyPct, atkCasualtyPct) * 100);
+      if ((_siegeDefPct >= DUTY_SIEGE_CASUALTY || _siegeAtkPct >= DUTY_SIEGE_CASUALTY) && this._raidAtkAddr) {
+        const _qualified = Math.round(Math.max(_siegeDefPct, _siegeAtkPct) * 100);
         // helper: raw buildings obj → jei gated, atrakink + pakelk checkpoint +200 (cap MINE_CAP)
         /* ⛏️💰 08-20: ciklas resetinasi VISADA (ne tik gated) — mmined=0 reiškia „nauja 200 skalė nuo nulio".
          * Checkpoint (mcp/mineCheckpoint) nebedalyvauja vartuose, laikom jį tik senų klientų suderinamumui. */
@@ -3798,6 +3815,11 @@ export class F9PvpRoom extends Room<F9State> {
           void this._buildingsOp(this._ownerAddr, _advanceSiege);
         }
         console.log(`[F9PvpRoom] ⛏️🗡 siege užskaityta (${_qualified}% aukų) — kasimo ciklas 0/${MINE_SIEGE_STEP} abiem: puolikui ${_atk.slice(0, 10)}… + gynėjui ${this._ownerAddr.slice(0, 10)}…`);
+      } else if (this._raidAtkAddr) {
+        /* 📜 AUDITO PĖDSAKAS: kodėl mūšis NEUŽSKAITYTAS. Iki šiol tylus praleidimas — logai rodydavo tik
+         * sėkmingus siege'us, tad „kodėl man neatsirakino ciklas" atsakyti buvo neįmanoma. Rodom ir tikrą
+         * proporciją, ir su 12 vardikliu: jei jos skiriasi, vadinasi kuri nors pusė išvedė mažiau nei 12. */
+        console.log(`[F9PvpRoom] ⛏️🚫 siege NEUŽSKAITYTA — aukos: gynėjas ${defElim}/${defTotal} (${Math.round(casualtyPct * 100)}%, /12 → ${Math.round(_siegeDefPct * 100)}%), puolikas ${atkElim}/${atkTotal} (${Math.round(atkCasualtyPct * 100)}%, /12 → ${Math.round(_siegeAtkPct * 100)}%); reikia ≥${Math.round(DUTY_SIEGE_CASUALTY * 100)}%`);
       }
 
       if (casualtyPct >= 0.5) {   // 🛡 ≥50% aukų → 1h skydas (nesvarbu kas laimėjo)
