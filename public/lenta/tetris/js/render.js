@@ -1759,8 +1759,11 @@
     F.outlinedCenter(ctx, practice
       ? (ready ? 'STARTING PRACTICE!' : 'TRY THE CONTROLS - AUTO START IN ' + secs + 'S')
       : (both ? 'BOTH READY - STARTING!'
-        : (ready ? 'WAITING FOR OPPONENT - AUTO START IN ' + secs + 'S'
-          : 'PRESS READY BELOW - MATCH STARTS IN ' + secs + 'S')),
+        : (ready ? 'WAITING FOR OPPONENT - ' + secs + 'S LEFT'
+          /* 2026-09-02: laikmatis nebereiskia "startas" - serveris jo pabaigoje macа ATSAUKIA ir
+           * grazina statyma (zr. BlocksRoom._prepGiveUp). Tekstas turi sakyti tiesa, kitaip zaidejas
+           * lauks starto, kurio nebus. */
+          : 'PRESS READY - CANCELS IN ' + secs + 'S')),
       cx, stY, (practice ? (ready ? U.good : U.gold) : (both ? U.good : (ready ? U.dim : U.gold))), '#05060c', 1);
 
     /* ── READY mygtukas ── */

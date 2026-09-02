@@ -27,7 +27,15 @@ import { chainDeckFull, chainUtypeStr } from "../services/DeckChain";   // 🎖�
 const TICK = 1000 / 60;        // serverio sim (koridoriui pakanka 60Hz; klientas interpoliuoja)
 const CORRIDOR_MS = 60;        // koridoriaus būsenos transliavimo dažnis (~16/s)
 const COUNTDOWN_MS = 3000;
-const PREP_MS = 15000;        // 🎓 pasiruošimo/valdymo-tutorial langas prieš startą: startas kai ABU „ready" ARBA po 15s
+/* 🎓 PASIRUOSIMO LANGAS. 2026-09-02 (user: "a game already started but i cant play it coz of the
+ * wallet pop up - cant control"): iki siol po PREP_MS macas startuodavo PATS, net jei NIEKAS nepaspaude
+ * READY. Langas prasideda ta sekunde, kai serveri pasiekia paskutinis stake tx hash - o klientas ji
+ * siuncia is `pay.then()`, t. y. dar pinigines lange/app'e. 15 s + 3 s countdown = 18 s nuo "pinigine
+ * grazino hash" iki krentanciu figuru; grizimas is mobilios pinigines app'o tiek lengvai suvalgo.
+ * Zaidejas negalejo valdyti, pralaimedavo ir gaudavo -* IR prarasdavo statyma uz maca, kurio nemate.
+ * DABAR: 60 s, ir langas baigiasi NE startu, o ATSAUKIMU + refundu (zr. _prepGiveUp). Macas prasideda
+ * TIK kai visi zmones paspaudzia READY - vienintelis irodymas, kad zaidejas grizo ir valdo. */
+const PREP_MS = Number(process.env.BLOCKS_PREP_MS) || 60000;
 const CHALLENGE_MS = 30000;   // kiek host'as turi laiko atsakyti „do you want to play?" (auto-decline po to)
 // 🧱💰 pay-on-accept: kiek abu turi laiko sumokėti statymą. 08-20: 120 s → 240 s.
 //    120 s pakako desktop plėtiniui, bet TELEFONE kelias yra: perjungimas į Ronin appsą →
@@ -524,7 +532,8 @@ export class BlocksRoom extends Room<BlocksState> {
     this._prepReady = {};
     this.broadcast("prep", { ms: PREP_MS });
     if (this.prepTimer) clearTimeout(this.prepTimer);
-    this.prepTimer = setTimeout(() => { this.prepTimer = null; this._beginCountdown(); }, PREP_MS);
+    // ⏳ Laikas baigesi, o ne visi paspaude READY -> macas NEPRASIDEDA (zr. PREP_MS komentara).
+    this.prepTimer = setTimeout(() => { this.prepTimer = null; void this._prepGiveUp(); }, PREP_MS);
   }
 
   private _onPrepReady(client: Client) {
@@ -540,6 +549,24 @@ export class BlocksRoom extends Room<BlocksState> {
       if (this.prepTimer) { clearTimeout(this.prepTimer); this.prepTimer = null; }
       this._beginCountdown();   // abu pasiruošę → startas nelaukiant 15s
     }
+  }
+
+  /* ⏳🚪 Ne visi paspaude READY per PREP_MS -> maco NEPRADEDAM.
+   * Statymas grazinamas, reitingas NELIECIAMAS. Anksciau cia buvo automatinis startas, ir zaidejas,
+   * kuris dar kabejo pinigines lange, gaudavo -* uz maca, kurio nezaide.
+   * Kaina: kas nors gali neatsakyti ir macas neivyks - bet tada abu atgauna pinigus ir ne vienas
+   * negauna nei pergales, nei pralaimejimo. Tai teisingesnis rezultatas nei nepelnytas pralaimejimas. */
+  private async _prepGiveUp() {
+    if (this.state.phase !== "prep") return;
+    const missing: string[] = [];
+    this.state.players.forEach((p, sid) => { if (sid !== "bot" && !this._prepReady[sid]) missing.push(p.name || sid.slice(0, 6)); });
+    console.log(`[BLOCKS] ⏳ prep atsauktas - READY nepaspaude: ${missing.join(", ") || "?"} (room=${this.roomId})`);
+    try { this.broadcast("prep_cancel", { reason: "not_ready", who: missing }); } catch (_) {}
+    if (this.escrow.active) { await this._abortWager("prep_not_ready"); return; }   // -> refundas abiem, phase=lobby
+    this._prepReady = {};
+    // nemokamas macas: fazes tikrinti nereikia - i cia patenkam tik is "prep" (zr. ankstyva return)
+    this.state.phase = "lobby";
+    this._relist("niekas nepatvirtino READY");
   }
 
   // Startas: countdown + (serverAuth) autoritetingos lentos. Kviečiama po pasiruošimo (abu ready / timeout).

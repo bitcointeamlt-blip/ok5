@@ -625,6 +625,13 @@
     var self = this, M = NET.MSG;
     NET.on('prep', function (p) { self._enterPrep((p && p.ms) || 15000); });   // 🎓 pasiruošimo/tutorial langas prieš startą
     NET.on('prep_state', function (p) { self._prepReadyCount = (p && p.ready) || 0; });
+    /* 2026-09-02: niekas nepaspaude READY -> serveris maca ATSAUKE ir grazino statyma.
+     * Be sito kliento ekranas kabotu "GET READY" su nuliniu laikmaciu ir jokio starto. */
+    NET.on('prep_cancel', function () {
+      try { NET.disconnect(); } catch (_) {}
+      self._wagerAbort = 'not_ready';
+      self.state = 'lobby'; self.roomCode = ''; self.inviteUrl = ''; self._private = false; self._startLobbyPoll();
+    });
     NET.on(M.START, function (p) { if (p && p.side) self.mySide = p.side; self._onNetStart(p); });
     NET.on(M.STATE, function (p) {
       if (p && p.foe) self._applyFoeSnapshot(p.foe);
