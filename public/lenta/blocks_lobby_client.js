@@ -36,10 +36,14 @@
   ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
     try { window.addEventListener(ev, _acUnlock, { once: true, passive: true }); } catch (_) { window.addEventListener(ev, _acUnlock); }
   });
-  function _alarm() {
-    try { if (localStorage.getItem('lenta_muted') === '1') return; } catch (_) {}
+  function _alarm(why) {
+    /* 🔎 2026-09-02: pirmoji versija tylėdavo BE ŽODŽIO, jei žaidimas nutildytas arba naršyklė
+     * neleido garso — atrodydavo „neveikia". Dabar visada pasakom priežastį į konsolę, o
+     * `window.__rbAlarm()` leidžia patikrinti garsą ranka, nelaukiant tikro mačo. */
+    try { if (localStorage.getItem('lenta_muted') === '1') { console.log('[BLOCKS 🔊] praleista (' + (why || '') + '): žaidimas NUTILDYTAS — lenta_muted=1'); return; } } catch (_) {}
     _acUnlock();
-    if (!_ac) return;
+    if (!_ac) { console.warn('[BLOCKS 🔊] nėra AudioContext — garso naršyklė neleidžia'); return; }
+    console.log('[BLOCKS 🔊] signalas: ' + (why || '?') + ' · ctx=' + _ac.state);
     try {
       var t0 = _ac.currentTime + 0.02;
       for (var i = 0; i < 3; i++) {
@@ -58,8 +62,9 @@
           o.start(t); o.stop(t + 0.32);
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn('[BLOCKS 🔊] nepavyko groti:', e && e.message); }
   }
+  try { window.__rbAlarm = function () { _alarm('rankinis testas'); return 'ok — jei negirdi, žr. konsolės eilutę virš šito'; }; } catch (_) {}
 
   var POLL_MS = 8000, PANEL_POLL_MS = 2500;
   var _timer = null, _colyseusLoading = null, _client = null, _running = false;
@@ -1386,6 +1391,7 @@
     }
     // 🤖 useAi = PvP „AI žaidžia už mane" — NEMOKAMA (moki tik pakopą); ai=true = RANKED vsAI (25 fee).
     var useAi = !ai && _aiPlayFlag;
+    _alarm('patvirtink statymą piniginėje');   // 🔊 piniginės patvirtinimo lentelė — irgi „lentutė, kad startuoti"
     _status('Confirm <b>' + tier + ' RONKE</b> ' + (ai ? 'RANKED AI fee' : 'stake') + ' in your wallet…', true);
     var pay = ai ? window.BlocksWager.payExact(tier) : window.BlocksWager.payEntry(tier);
     pay.then(function (r) {
@@ -1678,7 +1684,7 @@
     d.style.display = 'flex';
     d.querySelector('#rb-acc').onclick = function () { _challengeAck = true; _hideChallenge(); _cmd('accept'); };   // reveal ateis su state=countdown
     d.querySelector('#rb-dec').onclick = function () { _challengeAck = true; _hideChallenge(); _cmd('decline'); if (_bgActive) _showHostPill(); };
-    _alarm();   // 🔊 kas nors priėmė mūšį → garsus signalas (žaidėjas gali būti nuėjęs į kitą langą)
+    _alarm('kas nors nori žaisti');   // 🔊 kas nors priėmė mūšį (žaidėjas gali būti nuėjęs į kitą langą)
   }
   function _hideChallenge() { var d = document.getElementById('rb-challenge'); if (d) d.style.display = 'none'; }
   function _hideGame() {
@@ -1718,9 +1724,13 @@
     if (st && st !== 'challenge') _challengeAck = false;   // paliko challenge būseną → kitą kartą (naujas varžovas) vėl rodom
     if (d.myRoomId != null) _myRoomId = d.myRoomId;   // MANO kambarys → nerodom sąraše (negaliu prisijungti prie savęs)
     if (_panel && st !== 'lobby') _renderList();       // perpiešiam sąrašą be savo kambario
-    if ((st === 'prep' || st === 'countdown') && (_prevSt === 'awaiting' || _prevSt === 'connecting')) {
-      _alarm();   // 🔊 MANO iššūkį PRIĖMĖ („Challenge sent — waiting…“ → mačas) — galiu būti nuėjęs į kitą langą
-    }
+    /* 🔊 „GET READY" EKRANAS — signalas VISIEMS, ne tik svečiui (2026-09-02, user: „kai išmeta
+     * patvirtinimo lenteles kad startuoti PvP tetrio, nėra jokio įspėjančio garso").
+     * Pirma versija kabėjo ant `awaiting/connecting → prep`, tad HOST'as (kuris ką tik priėmė ir
+     * SUMOKĖJO) eidavo `staking → prep` ir garso NEGAUDAVO — o būtent jis grįžta iš piniginės ir
+     * turi paspausti READY. Nuo 664ae19b tai nebe kosmetika: nepaspaudus READY per 60 s mačas
+     * ATŠAUKIAMAS, tad praleistas ekranas = neįvykęs mačas. */
+    if (st === 'prep' && _prevSt !== 'prep' && _prevSt !== 'countdown') _alarm('GET READY — paspausk READY');
     if (st === 'prep' || st === 'countdown' || st === 'playing' || st === 'result') {
       if (!_podClaimedMatch && st !== 'result') { _podClaimedMatch = true; _podClaimPlay(); }   // 🏆 PoD: sužaistas žaidimas → player-signed claim
       _hideInviteOverlay();            // 🎓 pasiruošimas prasidėjo → nuimam invite ekraną (jei buvo)
