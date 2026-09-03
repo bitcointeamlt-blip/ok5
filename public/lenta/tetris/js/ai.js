@@ -171,7 +171,24 @@
     this.timer = 0;
     this.thinking = 0;
     this.lastPiece = null;
+    this.matchMs = 0;   // 😮‍💨 kiek šis mačas jau trunka (nuovargiui) — botas kuriamas naujas kiekvienam mačui
   }
+
+  /* 😮‍💨 NUOVARGIS (2026-09-03, user: „kuo ilgiau žmogus atlaiko, tuo durnesnis AI pasidaro").
+   * Grąžina 0..1: kiek botas jau pavargęs. Iki `startMs` — 0 (pilna jėga), toliau tiesiškai
+   * kyla per `rampMs`. Prasmė: iki šiol ilga partija žaidėjui NIEKO neduodavo — botas 3-ią
+   * minutę žaidė lygiai taip pat tiksliai kaip pirmą, tad „atlaikiau" nevirsdavo pranašumu.
+   * Dabar ištvermė yra atskira laimėjimo strategija.
+   * ⚠️ Liečia TIK botą — žmogaus pusės tai nepaliečia niekaip.
+   * Derinama per CFG.AI_FATIGUE (jei nėra — numatytieji žemiau). rampMs = 0 → išjungta. */
+  AI.prototype._fatigue = function () {
+    var F = (C && C.AI_FATIGUE) || {};
+    var start = F.startMs != null ? F.startMs : 45000;    // pirmos 45 s — pilna jėga
+    var ramp = F.rampMs != null ? F.rampMs : 90000;       // per kitas 90 s nusilpsta iki galo
+    if (!(ramp > 0)) return 0;
+    var f = (this.matchMs - start) / ramp;
+    return f < 0 ? 0 : (f > 1 ? 1 : f);
+  };
 
   AI.prototype.setLevel = function (key) {
     this.levelKey = key;
@@ -208,12 +225,17 @@
     /* Netobulumas dviem lygiais:
      *  blunder — reta, bet TIKRAI prasta padėtis (palieka skyles, kuriomis gali pasinaudoti)
      *  mistake — dažnesnė, bet nekalta klaida (2-5 geriausias variantas) */
+    /* 😮‍💨 Pavargęs botas klysta DAŽNIAU (žr. _fatigue). Priedai sudedami prie bazinių dažnių,
+     *    tad PAPER lieka durnas nuo pirmos sekundės, o GLOBAL nuo 3-ios minutės nustoja būti robotu. */
+    var _fatT = this._fatigue(), _F = (C && C.AI_FATIGUE) || {};
+    var _mist = this.cfg.mistake + (_F.mistakeAdd != null ? _F.mistakeAdd : 0.20) * _fatT;
+    var _blun = this.cfg.blunder + (_F.blunderAdd != null ? _F.blunderAdd : 0.10) * _fatT;
     var pick = candidates[0], k;
-    if (this.cfg.blunder > 0 && Math.random() < this.cfg.blunder) {
+    if (_blun > 0 && Math.random() < _blun) {
       var lim = Math.max(2, Math.floor(candidates.length * 0.45));
       k = Math.floor(Math.random() * lim);
       if (candidates[k]) pick = candidates[k];
-    } else if (this.cfg.mistake > 0 && Math.random() < this.cfg.mistake) {
+    } else if (_mist > 0 && Math.random() < _mist) {
       k = 1 + Math.floor(Math.random() * Math.min(4, candidates.length - 1));
       if (candidates[k]) pick = candidates[k];
     }
@@ -237,13 +259,17 @@
   AI.prototype.update = function (dt) {
     var eng = this.eng;
     if (eng.state !== 'playing' || !eng.cur) return;
+    this.matchMs += dt;
+    var F = (C && C.AI_FATIGUE) || {};
+    var _fat = this._fatigue();
+    var _slow = 1 + (F.slowMul != null ? F.slowMul : 0.55) * _fat;   // pilnai pavargęs juda 55% lėčiau
 
     /* nauja figūra -> pagalvojam */
     if (this.lastPiece !== eng.cur || !this.plan) {
       if (this.lastPiece !== eng.cur) {
         this.lastPiece = eng.cur;
         this.plan = null;
-        this.thinking = this.cfg.thinkMs;
+        this.thinking = this.cfg.thinkMs * _slow;
       }
       if (!this.plan) {
         this.thinking -= dt;
@@ -259,7 +285,7 @@
       /* Rodyklė ŽEMYN pigesnė už judesį į šoną — žmogus ją laiko nuspaudęs, o ne bakstelėja
        * po vieną (2026-08-15). Be šito silpnas botas nusmukdavo iki 5 figūrų/min. */
       var _nx = this.plan[0];
-      var cost = (_nx === 'softdrop') ? Math.max(35, this.cfg.moveMs * 0.28) : this.cfg.moveMs;
+      var cost = ((_nx === 'softdrop') ? Math.max(35, this.cfg.moveMs * 0.28) : this.cfg.moveMs) * _slow;
       if (this.timer < cost) break;
       this.timer -= cost;
       var a = this.plan.shift();

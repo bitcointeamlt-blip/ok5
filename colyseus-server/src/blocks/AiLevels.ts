@@ -30,10 +30,16 @@ export function cfgFor(step: number): AiCfg {
    * Dabar k=t^0.6 — kilimas tolygus, o viršuje lieka žmogiškos klaidos (nebe robotas).
    * Inkarai: GOLD 0★ 83ms/10% → 127ms/18% · GLOBAL 0★ 51ms/1% → 80ms/6% · PAPER lieka toks pat durnas. */
   const k = Math.pow(t, 0.6);
+  /* 🐢 2026-09-03 GREITIS SUMAŽINTAS (user: „greitį reikia sumažinti bet kokiu atveju").
+   * IŠMATUOTA iš tikro vykdymo ciklo (`ai.js update`): laikas figūrai = thinkMs + ~4,5 × moveMs
+   * (sukimai ~1 + horizontalūs ~2,5 + drop). Iki šiol viršus buvo 130 + 4,5×65 = 423 ms ⇒
+   * **2,37 figūros/s** — jau virš gero žmogaus (2–3) ir be jokių tikrų klaidų.
+   * Dabar viršus 180 + 4,5×87 = 571 ms ⇒ **1,75 figūros/s**, t. y. tvirtas, bet pasiveji žmogus.
+   * Apačia (PAPER) NEKEIČIAMA — ji jau tinkamai lėta. */
   return {
     name: "AI",
-    moveMs: Math.round(340 - 275 * k),                     // 340 → 65
-    thinkMs: Math.round(1000 - 870 * k),                   // 1000 → 130
+    moveMs: Math.round(340 - 253 * k),                     // 340 → 87  (buvo 340 → 65)
+    thinkMs: Math.round(1000 - 820 * k),                   // 1000 → 180 (buvo 1000 → 130)
     mistake: Math.round((0.55 * Math.pow(1 - t, 1.25) + 0.03) * 1000) / 1000,   // 0.58 → 0.03 (niekada tobulas)
     blunder: Math.round((0.30 * Math.pow(1 - t, 1.7) + 0.01) * 1000) / 1000,    // 0.31 → 0.01
     useHold: s >= 7,                                       // HOLD tik nuo STONE 1★ (buvo WOOD 2★)
