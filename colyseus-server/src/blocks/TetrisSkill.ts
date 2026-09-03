@@ -64,9 +64,14 @@ export async function recordMatch(addr: string, pieces: number, lines: number, s
   const pps = pieces / seconds, lpp = lines / pieces;
   try {
     const prev = await loadSkill(addr);
-    /* Eksponentinis slenkantis vidurkis: naujas mačas sveria 1/WINDOW. Nereikia saugoti istorijos,
-     * o senesni mačai natūraliai išblėsta — botas seka progresą, o ne įstringa ties pirmu įspūdžiu. */
-    const w = prev ? 1 / WINDOW : 1;
+    /* Svoris naujam mačui = 1/min(n+1, WINDOW).
+     * ⚠️ NE fiksuotas 1/WINDOW. Su fiksuotu pirmas mačas gautų svorį 1, o kiekvienas kitas tik 0,1,
+     *    tad po 3 mačų pirmasis vis dar svertų 0,81 — vienas nevykęs startas (ar atsitiktinai
+     *    puiki partija) ilgam iškreiptų vaizdą, nors kalibruoti pradedam jau nuo 3-io.
+     *    Su 1/(n+1) pradžia yra TIKRAS vidurkis (2-as mačas 1/2, 3-ias 1/3 …), o sukaupus WINDOW
+     *    mačų jis natūraliai virsta eksponentiniu — seni pamažu blėsta ir botas seka progresą. */
+    const n0 = prev ? prev.n : 0;
+    const w = 1 / Math.min(n0 + 1, WINDOW);
     const row: SkillRow = {
       pps: prev ? prev.pps + (pps - prev.pps) * w : pps,
       lpp: prev ? prev.lpp + (lpp - prev.lpp) * w : lpp,
