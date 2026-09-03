@@ -9,6 +9,7 @@ import { PayoutQueue } from "../blocks/PayoutQueue";   // neverifikuoto rezultat
 import * as ReferralStore from "../blocks/ReferralStore";   // 🎁 referalų sistema (bind + 5% kreditas)
 import * as RankStore from "../blocks/RankStore";           // 🏅 reitingo (lygos+žvaigždutės) + deko XP
 import * as AiLevels from "../blocks/AiLevels";
+import * as TetrisSkill from "../blocks/TetrisSkill";   // 🎯 botas pagal IŠMATUOTUS žaidėjo rodiklius
 import { chainDeckFull, chainUtypeStr } from "../services/DeckChain";   // 🎖️ unitu XP report (on-chain dekas)             // 🤖 RANKED vs AI — 24 pakopų sunkumo kreivė
 
 /* RONKE BLOCKS — 1v1 online (server-authoritative KORIDORIUS).
@@ -144,7 +145,7 @@ export class BlocksRoom extends Room<BlocksState> {
   private vsAI = false;
   private bots: Partial<Record<Side, { eng: any; ai: any; acc: number; snapAcc: number }>> = {};
   private _aiPlayOf: Record<Side, boolean> = { p1: false, p2: false };
-  private _aiCfgOf: Record<Side, { step: number; name: string }> = {
+  private _aiCfgOf: Record<Side, { step: number; name: string; cfg?: AiLevels.AiCfg }> = {
     p1: { step: 0, name: "PAPER AI 0★" }, p2: { step: 0, name: "PAPER AI 0★" },
   };
   // 🪪 žaidėjų lygos (0..7) + W/L statistika (AI ir PvP atskirai) — mačo badge'ams (abu mato tą patį)
@@ -293,8 +294,43 @@ export class BlocksRoom extends Room<BlocksState> {
       if (RankStore.isAddr(addr) && RankStore.rankEnabled()) score = (await RankStore.get(addr)).score;
     } catch (_) {}
     const lvl = AiLevels.levelFor(score);
-    this._aiCfgOf[side] = { step: lvl.step, name: lvl.name };
-    console.log(`[BLOCKS AI] ${side} botas ${lvl.name} (step ${lvl.step}) room=${this.roomId}`);
+    const cfg = await this._skillCfg(this._addrOf[side], lvl.name);
+    this._aiCfgOf[side] = { step: lvl.step, name: lvl.name, cfg: cfg || undefined };
+    console.log(`[BLOCKS AI] ${side} botas ${lvl.name} (step ${lvl.step}${cfg ? ", KALIBRUOTAS pagal žaidėją" : ""}) room=${this.roomId}`);
+  }
+
+  /* 🎯 Jei apie žaidėją jau turim pakankamai IŠMATUOTŲ duomenų — statom botą pagal JUOS, o ne
+   * pagal reitingo lentelę. Grąžina null, kol duomenų per mažai (tada lieka sena kreivė). */
+  private async _skillCfg(addr: string, name: string): Promise<AiLevels.AiCfg | null> {
+    try {
+      const sk = await TetrisSkill.loadSkill(addr);
+      if (!TetrisSkill.skillReady(sk)) return null;
+      const cfg = TetrisSkill.cfgFromSkill(sk!, name);
+      console.log(`[BLOCKS AI] kalibruota pagal žaidėją ${addr.slice(0, 10)}… pps=${sk!.pps.toFixed(2)} lpp=${sk!.lpp.toFixed(3)} (${sk!.n} mačų) → moveMs=${cfg.moveMs} thinkMs=${cfg.thinkMs} mistake=${cfg.mistake}`);
+      return cfg;
+    } catch (_) { return null; }
+  }
+
+  /* 📊 Mačo pabaigoje įsimenam, KAIP ŽAIDĖ ŽMOGUS — iš to kitą kartą statysim botą.
+   * Imam TIK žmogaus valdomas puses: boto pusės rodikliai apie žaidėją nieko nesako, o įskaityti
+   * juos reikštų vėl tą patį ratą (botas kalibruotų botą). */
+  private _recordSkill() {
+    try {
+      const secs = this.matchMs / 1000;
+      (["p1", "p2"] as Side[]).forEach((s) => {
+        if (this._aiPlayOf[s]) return;                    // 🤖 boto valdyta pusė — praleidžiam
+        if (this.vsAI && s === "p2") return;              // sintetinis „bot" žaidėjas
+        const addr = this._addrOf[s];
+        if (!RankStore.isAddr(addr)) return;
+        const pl = this._playerBySide(s);
+        if (!pl) return;
+        let sid = "";
+        for (const k in this.sideOf) if (this.sideOf[k] === s) { sid = k; break; }
+        const pieces = sid ? (this._lastPieces[sid] || 0) : 0;
+        if (!pieces) return;                              // client-auth snap'ų negavom
+        void TetrisSkill.recordMatch(addr, pieces, pl.lines || 0, secs);
+      });
+    } catch (_) {}
   }
 
   // 🤖 vsAI: boto lygis pagal P1 (žaidėjo!) reitingą — botas kopijuoja tave + sintetinis p2 „žaidėjas".
@@ -305,7 +341,8 @@ export class BlocksRoom extends Room<BlocksState> {
       if (RankStore.isAddr(addr) && RankStore.rankEnabled()) score = (await RankStore.get(addr)).score;
     } catch (_) {}
     const lvl = AiLevels.levelFor(score);
-    this._aiCfgOf.p2 = { step: lvl.step, name: lvl.name };
+    const cfgP2 = await this._skillCfg(this._addrOf.p1, lvl.name);
+    this._aiCfgOf.p2 = { step: lvl.step, name: lvl.name, cfg: cfgP2 || undefined };
     this._leagueOf.p2 = RankStore.decode(score).league;   // 🪪 boto lyga = žaidėjo lyga
     this._idStats.p2 = { ...this._idStats.p1 };           // 🪪 boto statistika = tavo dvynio (tavo) statistika
     if (!this.state.players.get("bot")) {
@@ -627,7 +664,8 @@ export class BlocksRoom extends Room<BlocksState> {
       const E = this.lib.Engine;
       const eng = new E({ side: SIDE_TO_ARMY[s], name: "BOT_" + s, seed: this.seed, isAI: true });
       eng.reset(this.seed);
-      try { this.lib.CFG.AI_LEVELS["BOT_" + s] = AiLevels.cfgFor(this._aiCfgOf[s].step); } catch (_) {}
+      // 🎯 Kalibruotas pagal žaidėją cfg turi PIRMENYBĘ prieš reitingo lentelę (žr. _skillCfg).
+      try { this.lib.CFG.AI_LEVELS["BOT_" + s] = this._aiCfgOf[s].cfg || AiLevels.cfgFor(this._aiCfgOf[s].step); } catch (_) {}
       this.bots[s] = { eng, ai: new this.lib.AI(eng, "BOT_" + s), acc: 0, snapAcc: 0 };
     });
     // 🤖 PvP su AI: žaidėjas gali IŠEITI, o jo botas pabaigia mačą → kambarys neturi užsidaryti likus 0 klientų.
@@ -1047,6 +1085,7 @@ export class BlocksRoom extends Room<BlocksState> {
     // 🎖️ linijų XP → pool + unitų reportas (kiekvienai pusei su pinigine; botas be kliento — no-op)
     void this._xpReport("p1");
     if (!this.vsAI) void this._xpReport("p2");
+    this._recordSkill();   // 🎯 įsimenam žmogaus tempą/švarumą kitam kartui
     // 🤖 vsAI: payout/referral kelio NĖRA — fee lieka treasury (markSettled → jokio refund), rank kai fee patvirtintas.
     if (this.vsAI) {
       this._winnerSide = winner;
