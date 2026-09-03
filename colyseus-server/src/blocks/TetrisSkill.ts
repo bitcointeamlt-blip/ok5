@@ -40,9 +40,14 @@ export type SkillRow = { pps: number; lpp: number; n: number; at: number };
 /* Kiek mačų sveria istorija. Mažas langas ⇒ botas šokinėtų po vienos blogos partijos;
  * didelis ⇒ neatspindėtų progreso. 10 yra kompromisas (~savaitė aktyvaus žaidimo). */
 const WINDOW = 10;
-/* Mažiau nei tiek figūrų — mačas per trumpas, kad ką nors pasakytų (dažniausiai ankstyvas topout
- * arba disconnect). Tokių NEĮSKAITOM, kitaip vienas nelaimingas startas nutemptų vidurkį. */
-const MIN_PIECES = 40;
+/* Mačas turi būti pakankamai ilgas, kad ką nors pasakytų (trumpi = ankstyvas topout / disconnect).
+ * ⚠️ 2026-09-03: buvo TIK `pieces >= 40`, ir tai pasirodė pritaikyta greitam žaidėjui. Išmatuota
+ *    gyvai: žaidėjas, dedantis 0,72 figūros/s, per normalų 50 s mačą padeda ~36 figūras — jo
+ *    partijos buvo ATMETAMOS, ir iš trijų sužaistų užsiskaitė tik viena (ilgiausia, 79 s).
+ *    Lėtas žaidėjas taip niekada nesusirinktų 3 mačų ir liktų amžinai ties reitingo kreive.
+ *    Todėl riba dabar DVEJOPA: arba pakankamai figūrų, arba pakankamai laiko. */
+const MIN_PIECES = 25;
+const MIN_SECONDS = 20;
 /* Kol nesukaupta tiek mačų, grįžtam prie senos reitingo kreivės — kalibracija iš 1-2 partijų
  * būtų triukšmas, ne matavimas. */
 const MIN_MATCHES = 3;
@@ -60,7 +65,7 @@ export async function loadSkill(addr: string): Promise<SkillRow | null> {
 /** Įrašo VIENO mačo rezultatą į slenkantį vidurkį. Tyliai nieko nedaro be Supabase (dev). */
 export async function recordMatch(addr: string, pieces: number, lines: number, seconds: number): Promise<void> {
   const c = sb(); if (!c || !_norm(addr)) return;
-  if (!(pieces >= MIN_PIECES) || !(seconds > 5)) return;
+  if (!(pieces >= MIN_PIECES) || !(seconds >= MIN_SECONDS)) return;
   const pps = pieces / seconds, lpp = lines / pieces;
   try {
     const prev = await loadSkill(addr);
