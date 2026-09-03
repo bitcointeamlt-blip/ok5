@@ -25,7 +25,7 @@
     /* ---------- gravitacija ---------- */
     GRAVITY_START: 1000,  // ms vienam langeliui 1 lygyje
     GRAVITY_MIN: 90,
-    LEVEL_LINES: 10,      // kas kiek linijų kyla lygis
+    LEVEL_LINES: 5,       // kas kiek linijų kyla lygis (2026-09-03: 10 → 5, user)
     LEVEL_FACTOR: 0.80,   // gravitacija *= factor kiekvienam lygiui
 
     /* ---------- PvP atakos ----------
