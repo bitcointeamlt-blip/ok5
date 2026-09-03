@@ -17,6 +17,11 @@ export type AiCfg = {
   name: string; moveMs: number; thinkMs: number;
   mistake: number; blunder: number; useHold: boolean; panic: number;
   hardDrop: boolean;   // false → botas figūros „nemeta" žemyn, o leidžia rodykle (žr. ai.js)
+  /* Ar botui taikomas NUOVARGIS (zr. ai.js _fatigue). Nenurodyta = taip.
+   * `false` statoma KALIBRUOTAM pagal zaideja botui: nuovargis buvo RAMSTIS, kol botas
+   * buvo stipresnis uz zmogu. Kai jo tempas ir klaidos jau paimti is paties zaidejo,
+   * papildomas durninimas maco viduryje tik iskraipo atitikima. */
+  fatigue?: boolean;
 };
 
 const MAX_STEP = 23;   // 0..23

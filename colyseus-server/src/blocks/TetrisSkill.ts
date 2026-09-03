@@ -129,5 +129,8 @@ export function cfgFromSkill(s: SkillRow, name: string): AiCfg {
      * savybės, ne sunkumas. Imam vidutines reikšmes. */
     panic: 1.8,
     hardDrop: true,
+    /* Kalibruotam botui nuovargio NEREIKIA - jis jau zaidzia zaidejo lygiu. Nuovargis buvo
+     * kompensacija uz tai, kad lenteles botas buvo stipresnis; cia jis tik gadintu atitikima. */
+    fatigue: false,
   };
 }

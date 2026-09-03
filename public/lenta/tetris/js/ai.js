@@ -182,6 +182,7 @@
    * ⚠️ Liečia TIK botą — žmogaus pusės tai nepaliečia niekaip.
    * Derinama per CFG.AI_FATIGUE (jei nėra — numatytieji žemiau). rampMs = 0 → išjungta. */
   AI.prototype._fatigue = function () {
+    if (this.cfg && this.cfg.fatigue === false) return 0;   // kalibruotas pagal zaideja botas NEPAVARGSTA
     var F = (C && C.AI_FATIGUE) || {};
     var start = F.startMs != null ? F.startMs : 25000;    // pirmos 25 s — pilna jėga (2026-09-03: buvo 45)
     var stepMs = F.stepMs != null ? F.stepMs : 5000;      // …toliau nuovargis auga PAKOPOMIS kas 5 s
