@@ -237,14 +237,36 @@
     var _fatT = this._fatigue(), _F = (C && C.AI_FATIGUE) || {};
     var _mist = this.cfg.mistake + (_F.mistakeAdd != null ? _F.mistakeAdd : 0.20) * _fatT;
     var _blun = this.cfg.blunder + (_F.blunderAdd != null ? _F.blunderAdd : 0.10) * _fatT;
+    /* 🎯 2026-09-03 — KLAIDA TURI KAINUOTI (user: „AI vis dar per stiprus labai").
+     * BUVO: klaida = `candidates[1..4]`, blunder = atsitiktinis iš geriausio 45 %. Kandidatai
+     * surūšiuoti pagal įvertį, o Tetryje 2-as ir 5-as padėjimas nuo geriausio skiriasi menkai —
+     * tad 18 % „klaidų" GOLD lygoje kainavo beveik NIEKO. Dėl to nei nuovargio dažnio didinimas,
+     * nei greičio mažinimas nepadėjo: didinom klaidų KIEKĮ, kurių KAINA ≈ 0.
+     * DABAR renkam pagal ĮVERČIO ATOTRŪKĮ, o ne pagal vietą sąraše:
+     *   klaida  → padėjimas ties `best − (10..30 %) × (best − worst)`
+     *   blunder → apatinis trečdalis (buvo: geriausias 45 %)
+     * ⚠️ Skaičiuojam per RĖŽĮ (best−worst), o ne procentais nuo `score`, nes įvertis gali būti
+     *    neigiamas — procentai nuo neigiamo skaičiaus apverstų prasmę. */
     var pick = candidates[0], k;
+    var _best = candidates[0].score, _worst = candidates[candidates.length - 1].score;
+    var _span = _best - _worst;
     if (_blun > 0 && Math.random() < _blun) {
-      var lim = Math.max(2, Math.floor(candidates.length * 0.45));
-      k = Math.floor(Math.random() * lim);
+      var lo = Math.floor(candidates.length * 0.67);
+      k = lo + Math.floor(Math.random() * Math.max(1, candidates.length - lo));
       if (candidates[k]) pick = candidates[k];
     } else if (_mist > 0 && Math.random() < _mist) {
-      k = 1 + Math.floor(Math.random() * Math.min(4, candidates.length - 1));
-      if (candidates[k]) pick = candidates[k];
+      if (_span > 0) {
+        var target = _best - (0.10 + Math.random() * 0.20) * _span;
+        var bi = 1, bd = Infinity;
+        for (var ci = 1; ci < candidates.length; ci++) {
+          var d = Math.abs(candidates[ci].score - target);
+          if (d < bd) { bd = d; bi = ci; }
+        }
+        pick = candidates[bi];
+      } else {
+        k = 1 + Math.floor(Math.random() * Math.max(1, candidates.length - 1));
+        if (candidates[k]) pick = candidates[k];
+      }
     }
 
     /* planas: sukimai -> horizontalūs žingsniai -> hard drop */

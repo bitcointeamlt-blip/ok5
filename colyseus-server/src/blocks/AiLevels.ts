@@ -38,10 +38,17 @@ export function cfgFor(step: number): AiCfg {
    * Apačia (PAPER) NEKEIČIAMA — ji jau tinkamai lėta. */
   return {
     name: "AI",
-    moveMs: Math.round(340 - 253 * k),                     // 340 → 87  (buvo 340 → 65)
-    thinkMs: Math.round(1000 - 820 * k),                   // 1000 → 180 (buvo 1000 → 130)
-    mistake: Math.round((0.55 * Math.pow(1 - t, 1.25) + 0.03) * 1000) / 1000,   // 0.58 → 0.03 (niekada tobulas)
-    blunder: Math.round((0.30 * Math.pow(1 - t, 1.7) + 0.01) * 1000) / 1000,    // 0.31 → 0.01
+    /* 🐢 2026-09-03 v3 (user: „ir laikas — jis pernelyg labai greitai stato"). Viršus dar lėčiau:
+     * 180 + 4,5×87 = 571 ms (1,75 fig/s) → 260 + 4,5×115 = 777 ms ⇒ **1,29 fig/s**. */
+    moveMs: Math.round(340 - 225 * k),                     // 340 → 115
+    thinkMs: Math.round(1000 - 740 * k),                   // 1000 → 260
+    /* 🎯 KLAIDŲ GRINDYS PAKELTOS. Išmatuota simuliacija (`_aisim.mjs`): ties GLOBAL klaidų
+     * KOKYBĖS pataisymas beveik nieko nedavė (23,0 → 22,0 linijos), nes dažnis ten tebuvo 3 % —
+     * botas paprasčiausiai NEKLYSTA, tad nesvarbu, kokia klaida būtų. Grindys 0.03 → 0.12
+     * (ir blunder 0.01 → 0.05) reiškia, kad net stipriausias botas suklysta apie kas 8-ą figūrą,
+     * o kartu su nauju atotrūkio modeliu klaida pirmą kartą palieka realią skylę. */
+    mistake: Math.round((0.48 * Math.pow(1 - t, 1.25) + 0.12) * 1000) / 1000,   // 0.60 → 0.12
+    blunder: Math.round((0.27 * Math.pow(1 - t, 1.7) + 0.05) * 1000) / 1000,    // 0.32 → 0.05
     useHold: s >= 7,                                       // HOLD tik nuo STONE 1★ (buvo WOOD 2★)
     panic: Math.round((1.0 + 1.5 * t) * 100) / 100,        // 1.0 → 2.5 (buvo 2.9)
     /* 🪶 PAPER lygos botas (0★–2★) NEnaudoja momentinio drop — leidžia figūrą rodykle žemyn,
