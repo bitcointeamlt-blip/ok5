@@ -183,11 +183,18 @@
    * Derinama per CFG.AI_FATIGUE (jei nėra — numatytieji žemiau). rampMs = 0 → išjungta. */
   AI.prototype._fatigue = function () {
     var F = (C && C.AI_FATIGUE) || {};
-    var start = F.startMs != null ? F.startMs : 45000;    // pirmos 45 s — pilna jėga
-    var ramp = F.rampMs != null ? F.rampMs : 90000;       // per kitas 90 s nusilpsta iki galo
-    if (!(ramp > 0)) return 0;
-    var f = (this.matchMs - start) / ramp;
-    return f < 0 ? 0 : (f > 1 ? 1 : f);
+    var start = F.startMs != null ? F.startMs : 25000;    // pirmos 25 s — pilna jėga (2026-09-03: buvo 45)
+    var stepMs = F.stepMs != null ? F.stepMs : 5000;      // …toliau nuovargis auga PAKOPOMIS kas 5 s
+    var stepAdd = F.stepAdd != null ? F.stepAdd : 0.10;   // po +10% už kiekvieną pakopą ⇒ pilnas po 50 s
+    if (!(stepMs > 0) || !(stepAdd > 0)) return 0;        // išjungimui: stepAdd = 0
+    if (this.matchMs < start) return 0;
+    /* 🪜 2026-09-03 (user: „nuovargį daryk 25 s ir su kiekviena 5 s nuovargis stiprėtų").
+     * Buvo TOLYGI 90 s rampa nuo 45 s — pilnas nuovargis tik ties 135 s, o iki tol augimas toks
+     * lėtas, kad partijoje jo nesimatė. Dabar PAKOPOMIS: peržengus 25 s iškart krinta pirma
+     * pakopa (+10%), ir kas 5 s po dar vieną ⇒ pilnas jau ties 75 s, o ne 135. */
+    var steps = Math.floor((this.matchMs - start) / stepMs) + 1;
+    var f = steps * stepAdd;
+    return f > 1 ? 1 : f;
   };
 
   AI.prototype.setLevel = function (key) {
