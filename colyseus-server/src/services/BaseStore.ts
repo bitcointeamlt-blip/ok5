@@ -73,7 +73,7 @@ export type InjuredUnit = { tokenId: string; utype: string; level: number; until
 // 🏗️ Pastatų konfigūracija (upgrade sistema): sienos lygis + pastatyti bokštai.
 //    + 🏥 injured (eilė) + hospStart — ligoninė laikoma ČIA (buildings jsonb — atskiros DB kolonos NEreikia,
 //    nes Supabase mgmt token miręs → DDL negalimas; service-role upsert veikia).
-export type BaseBuildings = { wallLevel: number; towerLevel?: number; towers: { y: number; level: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; blessGenLevel?: number; mineCapLevel?: number; raidGuardLevel?: number; deadUnits?: string[];
+export type BaseBuildings = { raidCd?: Record<string, number>; wallLevel: number; towerLevel?: number; towers: { y: number; level: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; blessGenLevel?: number; mineCapLevel?: number; raidGuardLevel?: number; deadUnits?: string[];
   cemPot?: number; cemTick?: number; cemPower?: number; cemNft?: number; cemRv?: number; cemWallet?: number; cemRamp?: number;   // ⚰️ kapinės (pot=nesurinkti; rv=RonkeVerse NFT, wallet=Barracks unitų piniginėj — full-player gating)
   minePot?: number;   // ⛏️💰 iškastas RONKE (server-authoritative mining pot; tick=cemTick bendras) — DUTY: raiders vagia 50%
   mineCheckpoint?: number;  // ⛏️🗡 (legacy) senas „siege checkpoint" lygis — vartuose nebedalyvauja, laikom senų klientų suderinamumui
@@ -172,10 +172,24 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const ownerSeenAt = Number.isFinite(+b.ownerSeenAt) ? Math.max(0, +b.ownerSeenAt) : 0;   // 🫀 grace guard
     // ⛏️💸 07-18 (C1): durable laukiantis withdrawal — validuojam nonce/amt(>0)/at(ts), kitaip null.
     //   nonce = signMineVoucher() dešimtainis uint256 string (BigInt.toString()); leidžiam ir 0x-hex (ateičiai).
+    /* PORU COOLDOWN (2026-09-04): "<puoliko adresas>" -> ts. Butina IŠTRAUKTI cia - sis normalizatorius
+     * yra BALTASIS SARASAS, tad bet koks neisvardytas laukas TYLIAI dingsta per kiekviena ikrovima.
+     * Be sitos eilutes visa 2 h taisykle butu atrodziusi veikianti, o realiai nulinedavusi po kas
+     * antro issaugojimo. Validuojam: tik 0x-adresai ir teigiami ts, ne daugiau 32 irasu. */
+    const _cdRaw = (b.raidCd && typeof b.raidCd === "object") ? b.raidCd : null;
+    let raidCd: Record<string, number> | undefined;
+    if (_cdRaw) {
+      const out: Record<string, number> = {};
+      for (const k of Object.keys(_cdRaw).slice(0, 32)) {
+        const a = String(k || "").trim().toLowerCase(); const t = Number((_cdRaw as any)[k]);
+        if (/^0x[0-9a-f]{40}$/.test(a) && Number.isFinite(t) && t > 0) out[a] = t;
+      }
+      if (Object.keys(out).length) raidCd = out;
+    }
     const mp = b.minePend;
     const minePend = (mp && typeof mp.nonce === "string" && /^(0x[0-9a-fA-F]{1,64}|[0-9]{1,78})$/.test(mp.nonce) && Number.isFinite(+mp.amt) && +mp.amt > 0 && Number.isFinite(+mp.at))
       ? { nonce: mp.nonce, amt: Math.round(+mp.amt), at: +mp.at } : null;
-    return { wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, blessGenLevel, mineCapLevel, raidGuardLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineMined, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
+    return { raidCd, wallLevel, towerLevel, towers, injured, hospStart, hospStarts, hospDurs, hospLevel, blessGenLevel, mineCapLevel, raidGuardLevel, deadUnits, cemPot, cemTick, cemPower, cemNft, cemRv, cemWallet, cemRamp, minePot, mineCheckpoint, mineMined, mineField, mineReserve, dutyMode, mineGated, minePend, ownerSeenAt, shieldUntil };
   } catch (e) { throw (e instanceof Error ? e : new Error("[BaseStore] loadBaseBuildings failed")); }   // 🛡 S-M5: tinklo išimtis = triktis (metam, ne null)
 }
 

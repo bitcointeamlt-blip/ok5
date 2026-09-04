@@ -262,6 +262,15 @@
   }
   var STEAL_PCT = 0.5;   // == serverio MINE_STEAL_PCT — 100% wipe atveju puolikas gauna 50% poto
   var RAID_MIN_DEFENDERS = 12;   // == serverio RAID_FIELD_REQ (F9PvpRoom) — ta pati riba kaip kasimo
+  /* ⏲ POROS COOLDOWN (2026-09-04) == serverio RAID_CD_MS. Pilis, kurią TU neseniai puolei, tau
+   * NERODOMA — anksčiau ji kabėdavo sąraše ir tik paspaudus mesdavo „RAID_COOLDOWN:Nmin".
+   * Kitiems žaidėjams ji matoma normaliai: būtent tai ir yra jų proga. */
+  var RAID_CD_MS = 2 * 3600000;
+  function onCooldown(r, me) {
+    var cd = (r && r.buildings && r.buildings.raidCd) || {};
+    var at = Number(cd[String(me || '').toLowerCase()]) || 0;
+    return at > 0 && (Date.now() - at) < RAID_CD_MS;
+  }
   // ⚔ M7 fix (07-12, sync auditas): rodom KOVAI PAJĖGIUS gynėjus (snapshot NFT − sužaloti − mirę) —
   //   raw snapshot count over-count'indavo (po raido rodė pre-raid skaičių, nors visi ligoninėj).
   function combatReady(r) {
@@ -286,6 +295,7 @@
       // 🛡 SAFE pilys NEPUOLAMOS (user taisyklė 08-20: „kasi iki 200 — niekas nepuola, esi nematomas").
       //   Nori kasti toliau → jungiesi DUTY ir tada esi taikinys. Serveris tikrina tą patį (_dutySafeGate).
       if (r.buildings && r.buildings.dutyMode === 'safe') return false;
+      if (onCooldown(r, me)) return false;   // ⏲ ką tik puoliau šitą pilį → man jos nerodo (kitiems rodo)
       // ⚔️🛡 08-14 (user): VIENA riba — „neturi 12 unitų pilyje → nekasi IR tavęs niekas negali pulti".
       //   Buvo >=1: pilys be kasyklos (grobis 0.0) vis tiek listinamos → puolikas pelnydavo kaulais, naujokas
       //   gaudavo unitus į ligoninę už dyką. Serveris enforce'ina tą patį (RAID_FIELD_REQ, NO_DEFENDERS).
@@ -389,6 +399,7 @@
     if (!/^0x[0-9a-f]{40}$/.test(a) || /(.)\1{9,}$/.test(a)) return false;
     var b = r.buildings || {};
     if (b.dutyMode === 'safe') return false;
+    if (onCooldown(r, myAddr())) return false;                          // ⏲ poros cooldown — man nematoma
     if ((Number(b.shieldUntil) || 0) > Date.now()) return false;        // po skydu — nepuolamas
     return combatReady(r) >= RAID_MIN_DEFENDERS;                        // 12+ lauke = puolamas
   }

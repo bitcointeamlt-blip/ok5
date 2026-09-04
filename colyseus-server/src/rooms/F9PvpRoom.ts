@@ -280,7 +280,16 @@ const CEM_STEAL_PCT = 0.5;                                            // TUNABLE
 // ⏲ RAID CD: tas pats puolikas → tas pats taikinys ne dažniau nei kas 15 min (spam/farm stabdis,
 //   kol raid fee kontraktas dar nepastatytas). Module-level map — išgyvena kambario dispose.
 const SHIELD_MS = Number(process.env.F9_SHIELD_MS) || 3_600_000;
-const RAID_CD_MS = Number(process.env.F9_RAID_CD_MS) || 900_000;
+/* PORA NEGALI KARTOTIS (2026-09-04, user: "zaidejai negaletu farminti patys saves nes jie pastovei
+ * kovoja su tais paceis adresais"). Isskirtines poros radinys: 0x527549f3 <-> 0x68b80b76 turi 39/39
+ * siege'u vienas su kitu (100% abipusiai), mediana 3 min nuo DUTY ijungimo iki partnerio puolimo,
+ * is kasyklos paimta 92 348 RONKE. Antra tokia pora: 0x15e1a481 <-> 0x1b2c9343.
+ * TAISYKLE: po raido TA PATI pora negali susitikti 2 h. Laikrodis skaiciuojamas nuo gynejo DUTY
+ * ijungimo, ir KIEKVIENAS naujas DUTY ijungimas ji paleidzia is naujo - todel neimanoma "prasedeti"
+ * SAFE rezime ir griZti. Kiti zaidejai mato ir puola IŠKART: butent tos 2 h ir yra ju proga.
+ * Iseitis dalyvavusiam: sugroji su KITU adresu - tavo cooldownai nukrenta (zr. _applyRaidCooldown).
+ * NEdalyvavusiam - lieka. */
+const RAID_CD_MS = Number(process.env.F9_RAID_CD_MS) || 2 * 3_600_000;
 const _raidCdMap = new Map<string, number>();   // "atkAddr|targetAddr" → raido pradžios ts
 const CEM_CLAIM_MIN = Number(process.env.F9_CEM_CLAIM_MIN) || 25;      // TUNABLE: nuo kiek galima claimint
 const CEM_CAP_BONES = Number(process.env.F9_CEM_CAP_BONES) || 50;      // TUNABLE: sandėlio lubos (kaulais)
@@ -1133,7 +1142,18 @@ export class F9PvpRoom extends Room<F9State> {
       //   Vartai ENFORCE'inami tik SAFE'e: SAFE(pilnas ciklas)→DUTY → kasi toliau (priimta rizika = puolamas);
       //   DUTY→SAFE grįžus mmined vis dar ≥200 → vėl stoja. Todėl jokio toggle-dodge.
       // ⚔️🛡 Įsipareigojimo lango žymė: įėjus į DUTY (iš SAFE) → užrakinam grįžimą N min. Grįžus į SAFE → valom.
-      if (want === "online" && _prevDuty !== "online") this._dutyLockUntil.set(addr, Date.now() + DUTY_MIN_DWELL_MS);
+      if (want === "online" && _prevDuty !== "online") {
+        this._dutyLockUntil.set(addr, Date.now() + DUTY_MIN_DWELL_MS);
+        /* PORAI: laikrodis pradedamas IS NAUJO kiekviena karta ijungus DUTY. Be sito butu galima
+         * "prasedeti" 2 h SAFE rezime (kur taves vis tiek niekas nepuola) ir grizti pas partneri be
+         * jokios ekspozicijos - taisykle butu tuscia. Dabar norint susitikti su ta pacia pora reikia
+         * ISBUTI DUTY 2 h, o tas laikas ir yra proga visiems kitiems. */
+        const _now = Date.now();
+        if (this._buildings) { const _cd = ((this._buildings as any).raidCd) || {};
+          for (const k of Object.keys(_cd)) _cd[k] = _now; (this._buildings as any).raidCd = _cd; }
+        void this._buildingsOp(addr, (b: any) => { const cd = b.raidCd || {};
+          for (const k of Object.keys(cd)) cd[k] = _now; b.raidCd = cd; });
+      }
       else if (want === "safe") this._dutyLockUntil.delete(addr);
       this._persistCem(addr);
       // ⛏️📜 AUDITAS: rankinis režimo keitimas. DUTY kasa 2× greičiau, tad „kiek laiko kuriuo režimu"
@@ -1748,7 +1768,7 @@ export class F9PvpRoom extends Room<F9State> {
       }
       console.log(`[F9PvpRoom] 🤖 ASYNC raid on ${this._ownerAddr}: ${this._restoreUnits ? this._restoreUnits.length + " AI defenders" : "no snapshot"}`);
       this._raidAtkAddr = String(p.address || "").trim().toLowerCase();   // 📜 puolikas (async)
-      _raidCdMap.set(this._raidAtkAddr + "|" + this._ownerAddr, Date.now());   // ⏲ CD startuoja raidui prasidėjus
+      this._applyRaidCooldown(this._raidAtkAddr, this._ownerAddr);   // pora 2 h; kiti ju cooldownai nuimti
       try { client.send("raid_mode", { live: false }); } catch (_) {}     // ℹ️ puolikui: OFFLINE pilis (AI gynėjai)
       this._startMatch();
       return;
@@ -1890,7 +1910,7 @@ export class F9PvpRoom extends Room<F9State> {
           throw new Error("RAID_FEE:" + (_fee.reason || "required") + ":" + RAID_FEE_RONKE);
         }
       }
-      _raidCdMap.set(String(p.address || "").trim().toLowerCase() + "|" + this._ownerAddr, Date.now());
+      this._applyRaidCooldown(String(p.address || ""), this._ownerAddr);
       this._retreatMs = 0; this._attackerEngaged = false; this._lastRetreatSec = -1;   // 🏳️ švarus raidas
       this._spawnSquadFor(p);
       // Puolikas prisijungė PO match_start broadcast'o → siunčiam JAM areną tiesiogiai (kitaip jo klientas
@@ -3679,6 +3699,20 @@ export class F9PvpRoom extends Room<F9State> {
      * (ten „laisvė palikti tik 1" lieka, 07-06 user) — šis metodas kviečiamas TIK iš dviejų raido kelių. */
     this._activeCount.set(client.sessionId, MAX_ACTIVE);
   }
+  /* Po raido: ABU gauna 2 h cooldown vienas pries kita, o VISI kiti ju cooldownai nukrenta.
+   * `raidCd = { [kitas]: now }` viena priskyrimu padaro abu dalykus: uzdeda sviezia pora ir istrina
+   * likusius - butent to ir norejo user ("cd nuimtas tik tam kuris dalyvauja"). Nedalyvaves trecias
+   * zaidejas savo iraso pas save NEPRARANDA, nes jo eilutes mes neliecam. */
+  private _applyRaidCooldown(atkRaw: string, defRaw: string) {
+    const atk = String(atkRaw || "").trim().toLowerCase(), def = String(defRaw || "").trim().toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(atk) || !/^0x[0-9a-f]{40}$/.test(def)) return;
+    const now = Date.now();
+    _raidCdMap.set(atk + "|" + def, now); _raidCdMap.set(def + "|" + atk, now);
+    if (this._buildings) (this._buildings as any).raidCd = { [atk]: now };   // gyvas gate mato iskart
+    void this._buildingsOp(def, (b: any) => { b.raidCd = { [atk]: now }; });
+    void this._buildingsOp(atk, (b: any) => { b.raidCd = { [def]: now }; });
+    console.log(`[F9PvpRoom] pora ${atk.slice(0, 10)}... <-> ${def.slice(0, 10)}... cooldown ${Math.round(RAID_CD_MS / 60000)} min (kiti ju cooldownai nuimti)`);
+  }
   private _checkRaidGate(atkAddrRaw: string) {
     const atk = String(atkAddrRaw || "").trim().toLowerCase();
     const sh = Number((this._buildings as any)?.shieldUntil) || 0;
@@ -3686,7 +3720,11 @@ export class F9PvpRoom extends Room<F9State> {
       console.log(`[F9PvpRoom] 🛡 raid atmestas — ${this._ownerAddr} po shield'u dar ${Math.ceil((sh - Date.now()) / 60000)}min`);
       throw new Error("SHIELDED:" + Math.ceil((sh - Date.now()) / 60000));
     }
-    const cdAt = _raidCdMap.get(atk + "|" + this._ownerAddr) || 0;
+    /* Persistuota reiksme yra AUTORITETAS: `_raidCdMap` gyvena tik procese, tad po kiekvieno Colyseus
+     * deploy'o visi cooldownai nuliadavo - net senosios 15 min realiai neveike. Atmintis lieka tik
+     * greitu fallback'u tam paciam procesui. */
+    const _cdRow = ((this._buildings as any)?.raidCd) || {};
+    const cdAt = Math.max(Number(_cdRow[atk]) || 0, _raidCdMap.get(atk + "|" + this._ownerAddr) || 0);
     if (Date.now() - cdAt < RAID_CD_MS) {
       console.log(`[F9PvpRoom] ⏲ raid atmestas — ${atk.slice(0, 10)}… cooldown dar ${Math.ceil((RAID_CD_MS - (Date.now() - cdAt)) / 60000)}min`);
       throw new Error("RAID_COOLDOWN:" + Math.ceil((RAID_CD_MS - (Date.now() - cdAt)) / 60000));
