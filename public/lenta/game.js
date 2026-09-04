@@ -46909,6 +46909,22 @@ window.__F9 = {
         '<button id="f9ri-cancel" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #3a3a55;background:rgba(255,255,255,0.04);color:#8a9aaa;cursor:pointer;">CANCEL</button>' +
       '</div></div>';
     document.body.appendChild(ov);
+    /* ⏲ POROS COOLDOWN (2026-09-04, user): kvietimo nuoroda yra ATSKIRAS kelias į raidą — ji sąrašo
+     * filtro neliečia, tad be šito draugas galėtų atsiųsti linką ir apeiti 2 h. Vietoj ⚔ ATTACK
+     * mygtuko rodom likusį laiką ir pasakom, ką daryti. Serveris vis tiek atmestų, bet žaidėjas tai
+     * sužinotų tik PO paspaudimo — o mokestis ir laukimas jau būtų prasidėję. */
+    try {
+      if (window.F9RaidCooldown && window.F9RaidCooldown.left) {
+        window.F9RaidCooldown.left(addr).then(function (ms) {
+          if (!(ms > 0)) return;
+          var go = ov.querySelector('#f9ri-go'); if (!go) return;
+          go.outerHTML = '<div style="flex:1;font-family:inherit;font-size:9px;padding:11px;border-radius:8px;' +
+            'border:2px solid #6a5a2a;background:rgba(255,207,92,0.08);color:#ffcf5c;line-height:1.6;">' +
+            '⏲ ' + window.F9RaidCooldown.text(ms) + ' left<br>' +
+            '<span style="color:#8a9aaa;font-size:8px;">You already fought this address —<br>find another opponent or wait.</span></div>';
+        });
+      }
+    } catch (_) {}
     var close = function () { try { ov.remove(); } catch (_) {} };
     ov.querySelector('#f9ri-go').onclick = function () {
       close();

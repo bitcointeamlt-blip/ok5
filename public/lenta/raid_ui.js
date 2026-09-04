@@ -266,11 +266,31 @@
    * NERODOMA — anksčiau ji kabėdavo sąraše ir tik paspaudus mesdavo „RAID_COOLDOWN:Nmin".
    * Kitiems žaidėjams ji matoma normaliai: būtent tai ir yra jų proga. */
   var RAID_CD_MS = 2 * 3600000;
-  function onCooldown(r, me) {
+  function cdLeftMs(r, me) {
     var cd = (r && r.buildings && r.buildings.raidCd) || {};
     var at = Number(cd[String(me || '').toLowerCase()]) || 0;
-    return at > 0 && (Date.now() - at) < RAID_CD_MS;
+    if (!at) return 0;
+    return Math.max(0, RAID_CD_MS - (Date.now() - at));
   }
+  function onCooldown(r, me) { return cdLeftMs(r, me) > 0; }
+  function cdText(ms) {
+    var m = Math.ceil(ms / 60000);
+    return m >= 60 ? (Math.floor(m / 60) + 'h ' + (m % 60) + 'm') : (m + ' min');
+  }
+  /* ⏲ VIENAS SARGAS VISIEMS KELIAMS. Sąrašas filtruoja pats, bet į raidą veda dar DU keliai, kurie
+   * sąrašo neliečia: rankinis adreso įvedimas („Or enter a wallet address") ir KVIETIMO NUORODA
+   * (game.js `bootRaidInvite`). Be šito jie apeitų cooldown'ą, o žaidėjas gautų serverio klaidą tik
+   * PO to, kai jau paspaudė. Grąžina 0 = galima pulti. */
+  function raidCooldownLeft(addr) {
+    var me = String(myAddr() || '').toLowerCase(), t = String(addr || '').trim().toLowerCase();
+    if (!me || !/^0x[0-9a-f]{40}$/.test(t)) return Promise.resolve(0);
+    var url = SUPABASE_URL + '/rest/v1/f9_bases?select=ronin_address,buildings&ronin_address=eq.' + t + '&limit=1';
+    return fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY } })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (rows) { return cdLeftMs((rows && rows[0]) || null, me); })
+      .catch(function () { return 0; });   // DB nepasiekiamas → neblokuojam, serveris vis tiek atmes
+  }
+  try { window.F9RaidCooldown = { left: raidCooldownLeft, text: cdText, ms: RAID_CD_MS }; } catch (_) {}
   // ⚔ M7 fix (07-12, sync auditas): rodom KOVAI PAJĖGIUS gynėjus (snapshot NFT − sužaloti − mirę) —
   //   raw snapshot count over-count'indavo (po raido rodė pre-raid skaičių, nors visi ligoninėj).
   function combatReady(r) {
@@ -346,6 +366,17 @@
   }
 
   function doRaid(addr) {
+    /* ⏲ Rankinis įvedimas sąrašo filtro neliečia — tikrinam čia. */
+    raidCooldownLeft(addr).then(function (ms) {
+      if (ms > 0) {
+        try { if (window.showGameNotification) window.showGameNotification('⏲ ALREADY FOUGHT',
+          'You already raided this castle — find another opponent, or wait ' + cdText(ms) + '.', '#ffcf5c'); } catch (_) {}
+        return;
+      }
+      _doRaidNow(addr);
+    });
+  }
+  function _doRaidNow(addr) {
     closePanel();
     if (window.F9PvpLive && window.F9PvpLive.launchRaid) window.F9PvpLive.launchRaid(addr);
     else { try { if (window.showGameNotification) window.showGameNotification('RAID', 'Raid module not ready', '#f66'); } catch (_) {} }

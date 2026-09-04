@@ -8,7 +8,7 @@ import { readFileSync } from "fs";
 import { createClient } from "@supabase/supabase-js";
 import "dotenv/config";
 const R = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
-const SRC = R("./src/rooms/F9PvpRoom.ts"), STORE = R("./src/services/BaseStore.ts"), UI = R("../public/lenta/raid_ui.js");
+const SRC = R("./src/rooms/F9PvpRoom.ts"), STORE = R("./src/services/BaseStore.ts"), UI = R("../public/lenta/raid_ui.js"), GAME = R("../public/lenta/game.js");
 let fail = 0;
 const ok = (c, m) => { console.log(`  ${c ? "✅" : "🔴"} ${m}`); if (!c) fail++; };
 
@@ -25,6 +25,10 @@ ok(/raidCd\?: Record<string, number>/.test(STORE) && /return \{ raidCd, wallLeve
 ok(/function onCooldown\(r, me\)/.test(UI) && /if \(onCooldown\(r, me\)\) return false/.test(UI),
    "klientas pilį SLEPIA (ne klaida paspaudus)");
 ok(/var RAID_CD_MS = 2 \* 3600000/.test(UI), "kliento riba sutampa su serverio");
+ok(/function raidCooldownLeft\(addr\)/.test(UI) && /window\.F9RaidCooldown/.test(UI), "bendras sargas eksportuotas (F9RaidCooldown)");
+ok(/raidCooldownLeft\(addr\)\.then/.test(UI), "rankinis adreso ivedimas tikrinamas PRIES raida");
+ok(/window\.F9RaidCooldown\.left\(addr\)\.then/.test(GAME) && /You already fought this address/.test(GAME),
+   "KVIETIMO NUORODA: vietoj ATTACK mygtuko rodomas cooldown");
 
 console.log("\n2) SIMULIACIJA ant tikros istorijos");
 const sb = createClient(process.env.SUPABASE_URL || "https://rbkivemouxwcgrpzazxb.supabase.co",
