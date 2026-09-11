@@ -75,3 +75,39 @@ export async function isMineNonceUsed(nonce: string): Promise<boolean | null> {
   }
   return null;
 }
+
+// ⛏️🚦 Kiek claim'ų šiandien LIKO on-chain?
+//
+// RonkeReward riboja `maxClaimsPerDay` VIENAM žaidėjui, ir tą patį skaitiklį dalinasi VISI šio pool'o
+// šaltiniai — faucet, kaulų swap (`signBoneRonkeVoucher` → tas pats `signMineVoucher`) ir kasykla.
+// Serveris to nematė: pasirašydavo voucherį ir NURAŠYDAVO pot, o TX nebegalėjo nusėsti (kontraktas
+// revert'ina „claim limit"), tad klientas net piniginės neatidarydavo (`wallet.js` pre-flight
+// `eth_estimateGas` lūžta pirmas) — žaidėjui atrodė, kad mygtukas tiesiog nieko nedaro, ir jis dar
+// likdavo 30 min užrakintas pending'e.
+//
+// 09-11: žaidėjas iškeitė kaulus 2× (1000 + 625 RONKE, 04:39 UTC) ir tuo išnaudojo dienos lubą; po to
+// prasuko ŠEŠIS tuščius kasimo ratus per 3,5 val. — kas kartą −1000 iš pot'o ir 30 min užraktas, kol
+// re-credit grąžindavo. Todėl tikrinam PRIEŠ pasirašant.
+//
+// null = RPC nepavyko. Skambintojas PRIVALO tada leisti (fail-open): miręs RPC neturi užrakinti visų —
+// ta pati pamoka kaip 08-14 nonce patikra, kuri tyliai užrakino 4 žaidėjus visam laikui.
+export async function mineClaimsLeftToday(player: string): Promise<{ used: number; max: number; left: number } | null> {
+  const ABI = [
+    "function maxClaimsPerDay() view returns (uint256)",
+    "function currentDay() view returns (uint256)",
+    "function claimsCount(address,uint256) view returns (uint256)",
+  ];
+  for (let i = 0; i < RPC_URLS.length; i++) {
+    try {
+      const c = new Contract(REWARD_ADDR, ABI, getProv(i));
+      const [maxRaw, dayRaw] = await Promise.all([c.maxClaimsPerDay(), c.currentDay()]);
+      const used = Number(await c.claimsCount(player, dayRaw));
+      const max = Number(maxRaw);
+      if (!Number.isFinite(max) || !Number.isFinite(used)) continue;
+      return { used, max, left: Math.max(0, max - used) };
+    } catch (e: any) {
+      if (i === RPC_URLS.length - 1) console.warn("[MineWithdraw] claims-left check fail (visi RPC):", e?.message);
+    }
+  }
+  return null;
+}

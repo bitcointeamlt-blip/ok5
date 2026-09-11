@@ -17,7 +17,7 @@ import { scoreTierCached, scoreTierNow } from "../services/RonkeScore";   // �
 import { count1of1 } from "../services/RonkeverseBless";   // ⚡🔵 „1/1" NFT = 5 BLESS/d kiekvienas (08-13)
 import { ethers } from "ethers";
 import { boneSwapCfg, signSwapVoucher, isNonceUsed, hasRequiredNft, MIN_BONES, MAX_SWAP_BONES, RR_MAX_SWAP_BONES, NFT_REQUIRED, signBoneRonkeVoucher, isRonkeRewardNonceUsed } from "../services/BoneSwap";
-import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
+import { mineWithdrawEnabled, signMineVoucher, isMineNonceUsed, mineClaimsLeftToday, MINE_MAX_SINGLE } from "../services/MineWithdraw";   // ⛏️💸 RONKE mining withdrawal (RonkeReward pool reuse)
 import { raidFeeEnabled, verifyAndConsumeRaidFee, RAID_FEE_RONKE } from "../services/RaidFee";   // ⚔️💰 10 RONKE raid fee → treasury (moka tik puolikas)
 import { chainDeck, chainDeckCached, chainStatsCached, chainDeckFull, chainDeckInvalidate, chainUtypeStr } from "../services/DeckChain";
 
@@ -1179,6 +1179,19 @@ export class F9PvpRoom extends Room<F9State> {
         const c = this._cem.get(addr);
         const pot = c ? (c.mpot || 0) : 0;
         if (pot < MINE_CLAIM_MIN) { client.send("mine_withdraw_result", { ok: false, error: "Need " + MINE_CLAIM_MIN + "+ RONKE to withdraw." }); return; }
+        // ⛏️🚦 On-chain dienos luba PRIEŠ pasirašant. Kontraktas leidžia maxClaimsPerDay claim'ų per dieną,
+        //   ir TĄ PATĮ skaitiklį valgo kaulų swap'as (jis eina per tą patį RonkeReward poolą). Anksčiau
+        //   serveris to nematydavo: pasirašydavo, NURAŠYDAVO pot, o TX nebegalėdavo nusėsti — žaidėjui
+        //   mygtukas atrodydavo negyvas (klientas lūžta dar `eth_estimateGas` etape, piniginė net
+        //   neatsidaro) ir jis likdavo 30 min pending'e. Dabar — aiški žinutė, pot NELIEČIAMAS.
+        // ⚠️ RPC nepavyko (null) → LEIDŽIAM. Miręs RPC neturi užrakinti nusiėmimo visiems (08-14 pamoka).
+        const _claims = await mineClaimsLeftToday(this._ownerAddr);
+        if (_claims && _claims.left <= 0) {
+          client.send("mine_withdraw_result", { ok: false, claimsUsed: _claims.used, claimsMax: _claims.max,
+            error: "Daily on-chain limit reached (" + _claims.used + "/" + _claims.max + " today — bone swaps count too). Resets 00:00 UTC." });
+          console.log(`[F9PvpRoom] ⛏️🚦 withdraw atmestas — dienos luba ${_claims.used}/${_claims.max} ${addr.slice(0, 10)}…`);
+          return;
+        }
         const amt = Math.min(Math.floor(pot), MINE_MAX_SINGLE);   // vienas withdraw ≤ maxSingle (kontrakto luba)
         const voucher = await signMineVoucher(this._ownerAddr, amt);
         if (!voucher) { client.send("mine_withdraw_result", { ok: false, error: "Signing failed — try again." }); return; }
