@@ -779,8 +779,35 @@
     else _onBattleDeployFree();
   }
 
+  /* 🔕 UŽDAROMOS JUOSTOS (user 09-13, žr. screenshot'ą): ta pati info kartojasi kaskart atidarius
+   * inventorių, tad kiekviena juosta turi ✕ ir pasirinkimas įsimenamas `localStorage`.
+   * Rakte yra turinio VERSIJA (`_v1`): pakeitus tekstą juosta parodoma iš naujo — kitaip naujo
+   * pranešimo nebepamatytų tas, kuris kadaise uždarė senąjį.
+   * Maketas: turinys atskirame `flex:1;min-width:0` bloke — be jo ilgas `<b>` tekstas užlipdavo
+   * ant kaimyninio (matosi user'io screenshot'e). */
+  var _NOTICE_KEY = 'f9_notice_off:';
+  function _noticeOff(key) { try { return localStorage.getItem(_NOTICE_KEY + key) === '1'; } catch (_) { return false; } }
+  function _notice(key, css, inner) {
+    if (_noticeOff(key)) return '';
+    return '<div style="grid-column:1/-1;display:flex;align-items:flex-start;gap:10px;padding:8px 12px;margin-bottom:4px;border-radius:8px;font-size:11px;' + css + '">'
+      + '<div style="flex:1;min-width:0;">' + inner + '</div>'
+      + '<button type="button" data-notice-dismiss="' + key + '" title="Hide this notice" style="flex:0 0 auto;background:none;border:0;color:inherit;opacity:.6;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;">✕</button>'
+      + '</div>';
+  }
+  function _onNoticeDismiss(e) {
+    var btn = (e.target && e.target.closest) ? e.target.closest('[data-notice-dismiss]') : null;
+    if (!btn) return;
+    e.stopImmediatePropagation();   // kitaip tas pats klikas nukeliautų į _onBattleGridClick
+    try { localStorage.setItem(_NOTICE_KEY + btn.getAttribute('data-notice-dismiss'), '1'); } catch (_) {}
+    var bar = btn.parentNode;
+    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+  }
+  /* Visas juostas grąžinti: BarracksNFT.resetNotices() konsolėje. */
+  function resetNotices() { try { for (var i = localStorage.length - 1; i >= 0; i--) { var k = localStorage.key(i); if (k && k.indexOf(_NOTICE_KEY) === 0) localStorage.removeItem(k); } } catch (_) {} }
+
   function bindBattleTab() {
     const grid = document.getElementById('nft-battle-grid');
+    if (grid) grid.addEventListener('click', _onNoticeDismiss);   // 🔕 PIRMIAU už picker'į — ✕ neturi virsti kortos paspaudimu
     if (grid) grid.addEventListener('click', _onBattleGridClick);
     const freeGrid = document.getElementById('nft-battle-free-grid');
     if (freeGrid) freeGrid.addEventListener('click', _onBattleGridClick);
@@ -1481,10 +1508,10 @@
       //   lauke), o kurie laukia rezerve (dekas > 12). Rodoma tik kai lauko info šviežia (esi savo pilyje).
       if (window.__f9HomeActive && window._f9OnField instanceof Set && window._f9OnField.size) {
         const _fN = window._f9OnField.size, _rN = (window._f9Reserve instanceof Set) ? window._f9Reserve.size : 0;
-        _invHtml = `<div style="grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:8px 12px;margin-bottom:4px;border:1px solid rgba(111,207,92,0.4);border-radius:8px;background:rgba(18,54,28,0.14);color:#bfe8c0;font-size:11px;"><span style="color:#8dffa0;font-weight:700;">🛡 ${_fN} on field</span> defending now (max 12)` + (_rN > 0 ? ` · <span style="color:#a8c8ff;font-weight:700;">🪖 ${_rN} in reserve</span> — reinforce when a field unit falls` : '') + `</div>` + _invHtml;
+        _invHtml = _notice('onfield_v1', 'border:1px solid rgba(111,207,92,0.4);background:rgba(18,54,28,0.14);color:#bfe8c0;', `<span style="color:#8dffa0;font-weight:700;">🛡 ${_fN} on field</span> defending now (max 12)` + (_rN > 0 ? ` · <span style="color:#a8c8ff;font-weight:700;">🪖 ${_rN} in reserve</span> — reinforce when a field unit falls` : '')) + _invHtml;
       }
       if (_invInjured.size) {
-        _invHtml = `<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border:1px solid rgba(232,93,93,0.45);border-radius:8px;background:rgba(120,40,40,0.12);color:#ff9a98;font-size:11px;">🏥 ${_invInjured.size} injured unit(s) healing in your castle hospital — they return to your deck automatically when healed. No re-registration needed; your deck stays valid.</div>` + _invHtml;
+        _invHtml = _notice('injured_v1', 'border:1px solid rgba(232,93,93,0.45);background:rgba(120,40,40,0.12);color:#ff9a98;', `🏥 ${_invInjured.size} injured unit(s) healing in your castle hospital — they return to your deck automatically when healed. No re-registration needed; your deck stays valid.`) + _invHtml;
       }
       // 💀 FALLEN sekcija (07-05 user) — permadead unitai: pažymėti 💀 + NEklikinami (jokių deko mygtukų).
       //   Rodo faktą, kad permadeath veikia. Mirtys dabar feikinės → NFT vis dar on-chain (todėl balanse skaičiuojas).
@@ -1502,7 +1529,7 @@
             + '<div style="padding:6px 10px;text-align:center;color:#9a9aa8;font-size:10px;font-weight:700;letter-spacing:.5px">PERMADEAD · cannot deploy</div>'
             + '</div></div></div>';
         }).join('');
-        _invHtml += '<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;margin:8px 0 4px;border:1px solid rgba(120,120,135,.4);border-radius:8px;background:rgba(30,30,40,.35);color:#b0b0c0;font-size:11px;">💀 ' + _fallen.length + ' fallen unit(s) — permadeath (killed in castle PvP). Shown for reference; not deployable.</div>' + _fh;
+        _invHtml += _notice('fallen_v1', 'border:1px solid rgba(120,120,135,.4);background:rgba(30,30,40,.35);color:#b0b0c0;', '💀 ' + _fallen.length + ' fallen unit(s) — permadeath (killed in castle PvP). Shown for reference; not deployable.') + _fh;
       }
       grid.innerHTML = _invHtml;
       // Click handler (delegated): VISA korta = add/remove į deką (pagrindinis veiksmas).
@@ -1745,7 +1772,7 @@
   }
 
   // Public API
-  window.NFTBarracksModal = { open: openModal, close: closeModal };
+  window.NFTBarracksModal = { open: openModal, close: closeModal, resetNotices: resetNotices };   // 🔕 resetNotices() — grąžina visas uždarytas juostas
   // Compat: f12_predeck_modal.js iškviečia _openNftBarracksModal — alias į open + Battle tab.
   window._openNftBarracksModal = function() {
     openModal();
