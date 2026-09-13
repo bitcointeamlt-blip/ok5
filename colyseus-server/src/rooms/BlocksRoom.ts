@@ -270,6 +270,10 @@ export class BlocksRoom extends Room<BlocksState> {
       this._aiPlayOf[side] = true;
       void this._fetchAiLevel(side);
     }
+    /* 👻 09-13 porinis veiksmas `onLeave` „išėjo paskutinis" išėmimui: šeimininkui trumpam
+     * atsijungus (tab'as, tinklas) kambarys išimamas, o grįžus turi vėl atsirasti. TIK `lobby`
+     * fazėje — `staking`/`prep` metu kambarys NETURI būti reklamuojamas kaip laisvas. */
+    if (this.state.phase === "lobby" && !this.escrow.active) this._relist("žaidėjas (vėl) kambaryje");
   }
 
   // 🪪 žaidėjo lyga + W/L (AI/PvP atskirai) badge'ams (best-effort; be piniginės/DB → PAPER 0-0)
@@ -367,6 +371,13 @@ export class BlocksRoom extends Room<BlocksState> {
       }
       try { this.state.players.delete(client.sessionId); } catch {}
       if (client.sessionId === this.hostSession) this.hostSession = "";
+      /* 👻 09-13: išėjus PASKUTINIAM žmogui kambarys privalo dingti iš lobio. Anksčiau čia buvo
+       * `return` be jokio `_unlist()`, o `staking`/`prep` dar ir išjungia `autoDispose` (mobile fix),
+       * tad tuščias kambarys likdavo sąraše iki `STAKE_MS` (4 min). `clients` skaičiuojam PATYS —
+       * priklausomai nuo Colyseus versijos išeinantis klientas dar gali būti masyve. */
+      if (this.clients.filter((c) => c.sessionId !== client.sessionId).length === 0) {
+        this._unlist("išėjo paskutinis žaidėjas");
+      }
       return;
     }
     // ⏱️ COUNTDOWN — mačas dar NEPRASIDĖJO: nė viena figūra nenukrito, tad išėjimas čia NĖRA
@@ -1069,6 +1080,12 @@ export class BlocksRoom extends Room<BlocksState> {
   }
   private _relist(why: string) {
     if (this._neverList) return;
+    /* 👻 09-13: TUŠČIO kambario NIEKADA negrąžinam į lobį. `_abortWager` relist'ina PRIEŠ
+     * `await _refundBoth()` (on-chain verify ~15+ s, per RPC gedimą ilgiau), tad nutrūkęs mačas
+     * visą tą laiką kabėdavo sąraše kaip „atviras", nors jame nieko nebėra. O jei viena pusė dar
+     * sėdi, `disconnect()` net neplanuojamas (`clients.length === 0` sąlyga) ⇒ 1/2 klientai =
+     * klientas rodo jį kaip ŠVIEŽIĄ atvirą mačą NERIBOTAI. Žmonės meta iššūkį — niekas neatsako. */
+    if (!this.clients.length) { console.log(`[BLOCKS] 👻 _relist praleistas — kambarys tuščias (${why}) room=${this.roomId}`); return; }
     if (this._listed) return;
     this._listed = true;
     try { void this.setPrivate(false); } catch (_) {}

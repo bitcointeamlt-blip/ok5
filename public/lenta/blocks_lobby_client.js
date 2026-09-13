@@ -904,7 +904,11 @@
       if (!_client) _client = new window.Colyseus.Client(_endpoint());
       return _client.getAvailableRooms('blocks_room');
     }).then(function (rooms) {
-      return (rooms || []).filter(function (r) { return r.clients === 1 && r.maxClients === 2; })
+      /* 👻 09-13: `open:false` patikra BUVO TIK `_refreshWaiting` (LobbyRoom push) kelyje, o šitas —
+         HTTP fallback'as, kurį naudoja ženkliukas/toast'as IR pirmas panelės piešimas (žr. eil. ~1264)
+         bei `_fetchRoomById` (invite auto-join). Be jos uždaryti mačai vėl pasirodydavo sąraše ir
+         ženkliuke, o kvietimo nuoroda galėdavo nuvesti į jau uždarytą kambarį. */
+      return (rooms || []).filter(function (r) { return r.clients === 1 && r.maxClients === 2 && !(r.metadata && r.metadata.open === false); })
         .map(function (r) { return { roomId: r.roomId, host: (r.metadata && r.metadata.host) || 'Player', tier: (r.metadata && r.metadata.tier) || 69, mid: (r.metadata && r.metadata.mid) || null, wagerLive: (r.metadata && r.metadata.wagerLive), chain: (r.metadata && r.metadata.chain) || 'ronin' }; });
     }).catch(function () { return []; });
   }
