@@ -1486,19 +1486,6 @@
       if (_invInjured.size) {
         _invHtml = `<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border:1px solid rgba(232,93,93,0.45);border-radius:8px;background:rgba(120,40,40,0.12);color:#ff9a98;font-size:11px;">🏥 ${_invInjured.size} injured unit(s) healing in your castle hospital — they return to your deck automatically when healed. No re-registration needed; your deck stays valid.</div>` + _invHtml;
       }
-      /* ⚔️🔢 BANNER (geltonas): 4×/tipo riba lauke — 09-13 serveryje pradėta tikrinti.
-       * Be šito staiga sumažėjęs garnizonas atrodo kaip bug'as: picker'is 5-to to paties tipo
-       * neleido jau seniai, bet `_loadHomeDeck` prikabindavo visą registruotą deką, tad laukas
-       * vis tiek prisipildydavo vienodų unitų. Dabar riba tikra — pasakom KODĖL ir KIEK. */
-      try {
-        const _ptAll = {};
-        for (const _u of _battleInventory) { const _t = _u.utype || ''; _ptAll[_t] = (_ptAll[_t] | 0) + 1; }
-        let _over = 0;
-        for (const _t in _ptAll) _over += Math.max(0, _ptAll[_t] - NFT_MAX_PER_TYPE);
-        if (_over > 0) {
-          _invHtml = `<div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:4px;border:1px solid rgba(255,207,92,0.45);border-radius:8px;background:rgba(120,90,30,0.14);color:#ffd76a;font-size:11px;">⚔️ <b>Max ${NFT_MAX_PER_TYPE} per unit type on the castle field.</b> ${_over} of your unit(s) are held back by it — they stay yours and on-chain, but they do not deploy and do not reinforce. Field other unit types to get back to 12 defenders.</div>` + _invHtml;
-        }
-      } catch (_) {}
       // 💀 FALLEN sekcija (07-05 user) — permadead unitai: pažymėti 💀 + NEklikinami (jokių deko mygtukų).
       //   Rodo faktą, kad permadeath veikia. Mirtys dabar feikinės → NFT vis dar on-chain (todėl balanse skaičiuojas).
       if (_fallenMap.size) {
