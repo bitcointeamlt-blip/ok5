@@ -268,14 +268,24 @@
   // ⚠️ SQL LIKE gudrybė: `_` = bet kuris VIENAS simbolis, tad `rp_%` pagautų ir `rp2_…`.
   //    Todėl į Supabase siunčiam PLATŲ filtrą `rp*`, o tikslų prefiksą pritaikom kliente.
   // Sezonas baigiasi → žaisti negalima, leaderboard lieka TIK peržiūrai (duomenys neliečiami).
+  // `closed: true` = sezonas UŽDARYTAS galutinai, NEPRIKLAUSOMAI nuo laikrodžio.
+  //   ⚠️ Kodėl to reikia: `end`-pagrįstas lock naudoja ĮRENGINIO laikrodį, kol dar neatėjo serverio
+  //   laikas (pirmas Supabase fetch). Boot metu `showStart()` kviečia `seasonLocked()` PRIEŠ bet kokią
+  //   užklausą → atsilikęs telefono laikrodis apeina lock'ą ir leidžia žaisti UŽDARYTĄ sezoną, o tada
+  //   rezultatas nukeliauja į SENO sezono prefiksą ir sugadina archyvą. Uždaryta = uždaryta visur.
+  //   Naują sezoną pradėti: pridedi eilutę BE `closed`; seni lieka `closed: true`.
   const SEASONS = [
-    { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0) },
-    { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0) },
+    { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0), closed: true },
+    { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0), closed: true },
     /* 🏆 SEZONAS 3 (2026-08-30, user): vienas lyderbordas — ASMENINIS BENDRAS score (visų žaidimų suma),
      * jokio „geriausio vieno žaidimo" reitingo. Prizai — BLESS juostomis + unitai VISAM top 10.
      * RONKE fondo nebėra. Trukmė — 14 parų (08-30 user; buvo 7). */
     /* 📅 08-30 (user): sezonas 14 parų vietoj 7 — Rugp. 30 08:00 → Rugs. 13 08:00 UTC. */
-    { id: 3, key: 'rp3_', name: 'SEASON 3', start: Date.UTC(2026, 7, 30, 8, 0, 0), end: Date.UTC(2026, 8, 13, 8, 0, 0) },
+    { id: 3, key: 'rp3_', name: 'SEASON 3', start: Date.UTC(2026, 7, 30, 8, 0, 0), end: Date.UTC(2026, 8, 13, 8, 0, 0), closed: true },
+    /* 📅 09-13 (user): SEZONAS 4 — tos pačios taisyklės ir prizai kaip S3 (vienas lyderbordas pagal
+     * ASMENINĮ BENDRĄ score; BLESS juostos 50/25/15 + unitai visam top 10; RONKE fondo nėra).
+     * Startas BE TARPO — tiksliai ten, kur baigėsi S3 (Rugs. 13 08:00 UTC), trukmė 14 parų. */
+    { id: 4, key: 'rp4_', name: 'SEASON 4', start: Date.UTC(2026, 8, 13, 8, 0, 0), end: Date.UTC(2026, 8, 27, 8, 0, 0) },
   ];
   // Serverio laikas (Supabase `Date`) jei žinom, kitaip vietinis fallback → veikia net be tinklo.
   function nowMs() { return hasServerTime() ? serverNow() : Date.now(); }
@@ -288,14 +298,16 @@
   function seasonById(id) { for (const s of SEASONS) if (s.id === id) return s; return currentSeason(); }
   // Sezonų sąrašas UI pasirinkimui (naujausias pirmas) + „live" žyma.
   function seasonList() {
-    const cur = currentSeason(), t = nowMs();
+    const cur = currentSeason();
     return SEASONS.slice().reverse().map((s) => ({ id: s.id, name: s.name, start: s.start, end: s.end,
-      live: s.id === cur.id && t < s.end, ended: t >= s.end }));
+      live: s.id === cur.id && !seasonEnded(s), ended: seasonEnded(s) }));
   }
   function seasonEnd() { return currentSeason().end; }
   function seasonName() { return currentSeason().name; }
-  function seasonLocked() { return nowMs() >= currentSeason().end; }
-  function seasonLeftMs() { return Math.max(0, seasonEnd() - nowMs()); }
+  // Ar sezonas baigtas: rankinis `closed` (nepriklauso nuo laikrodžio) ARBA praėjo `end`.
+  function seasonEnded(s) { return !!s.closed || nowMs() >= s.end; }
+  function seasonLocked() { return seasonEnded(currentSeason()); }
+  function seasonLeftMs() { return seasonEnded(currentSeason()) ? 0 : Math.max(0, seasonEnd() - nowMs()); }
 
   // Įrašo runą: BEST (aukščiausias vieno žaidimo score) atsinaujina tik jei geresnis;
   //   TOTAL (bendras) — KIEKVIENO žaidimo score prisideda ant viršaus VISADA (kaupiasi).
