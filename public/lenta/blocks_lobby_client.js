@@ -1308,28 +1308,7 @@
     var rooms = _waitingRooms.filter(function (r) { return r.roomId !== _myRoomId && (r.chain || 'ronin') === _chain; });
     if (!rooms.length) {
       var none = _chain === 'solana' ? 'no open SOL matches yet' : 'no open matches yet';
-      /* 💬 09-13 (user): tuščias sąrašas buvo aklavietė — „nieko nėra" ir viskas. Išmatuota, kad
-         66 % penkių minučių langų turi tik VIENĄ žaidėją, tad tuščia būsena yra dažniausias vaizdas.
-         Vietoj jos siūlom, KUR rasti žmonių. Rodoma TIK kai sąrašas tuščias — atsiradus bent vienam
-         mačui `list.innerHTML` perrašomas eilutėmis žemiau ir šis blokas dingsta savaime. */
-      list.innerHTML =
-        '<div style="padding:16px 10px 8px;text-align:center;">' +
-          '<div style="color:#6a7a8a;font-size:9px;">' + none + '</div>' +
-          '<div style="color:#6a7a8a;font-size:9px;opacity:.7;margin-top:3px;">host one below ↓</div>' +
-          '<div style="margin-top:16px;padding-top:15px;border-top:1px solid #2e3a52;">' +
-            '<div style="color:#c9d4e8;font-size:9px;line-height:1.8;margin-bottom:13px;">' +
-              'No one is waiting right now.<br>' +
-              '<span style="color:#8a9aaa;">You\'ll find an opponent much<br>faster on Discord.</span>' +
-            '</div>' +
-            '<a href="https://discord.gg/VWHtUE4wus" target="_blank" rel="noopener noreferrer" ' +
-              'style="display:inline-flex;align-items:center;gap:9px;text-decoration:none;' +
-              'font-family:inherit;font-size:10px;color:#fff;background:#5865F2;' +
-              'padding:12px 20px;border:2px solid #404EED;border-radius:8px;' +
-              'box-shadow:0 3px 0 #3c45a5;letter-spacing:1px;">' +
-              '<span style="font-size:14px;line-height:1;">💬</span>JOIN DISCORD' +
-            '</a>' +
-          '</div>' +
-        '</div>';
+      list.innerHTML = '<div style="color:#6a7a8a;font-size:9px;padding:14px 0;text-align:center;">' + none + '<br><span style="opacity:.7;">host one below ↓</span></div>';
       return;
     }
     list.innerHTML = '';
