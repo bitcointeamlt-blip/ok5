@@ -596,6 +596,7 @@ const DEFAULT_SQUAD = ["skull", "archer", "harpoon_fish", "shaman", "pigronke", 
 const F9_ROOM_IDLE_MS = Number(process.env.F9_ROOM_IDLE_MS) || 360_000;   // 🧟 6min be aktyvumo → zombie kambarys disposinamas
 const MAX_DECK = 30;                         // gaunamo registruoto deko cap (Power Deck + RonkeVerse)
 const MAX_ACTIVE = 12;                        // kiek unitų AKTYVŪS mūšy vienu metu (Battle Squad); likę = rezervas
+const MAX_PER_TYPE = Number(process.env.F9_MAX_PER_TYPE) || 4;   // ⚔️ 09-13 user: daugiausiai TIEK vieno tipo NFT unitų lauke (IR rezerve)
 const AI_DEF_OWNER = "AI_DEFENDER";           // 🤖 async gynybos unitų „savininkas" (savininkas offline; rezervą turi kaip ir žmogus)
 const VALID_UTYPES = new Set(Object.keys(BASE_HP));
 // Žaidėjo deko įrašas (iš join opts.deck).
@@ -2613,7 +2614,34 @@ export class F9PvpRoom extends Room<F9State> {
   //   nemokami/test unitai (tuščias tokenId arba 'dev...') IŠNYKSTA. Fake tik kol NĖRA NFT.
   private _pureDeck(deck: DeckEntry[]): DeckEntry[] {
     const hasNft = deck.some((d) => d.tokenId && !/^dev/i.test(d.tokenId));
-    return hasNft ? deck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId)) : deck;
+    if (!hasNft) return deck;   // 🧪 dev/fake unitai (nauji žaidėjai, lokalūs testai) — riba jiems netaikoma
+    return this._capPerType(deck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId)));
+  }
+
+  /* ⚔️🔢 4× VIENO TIPO — LAUKO TAISYKLĖ (2026-09-13 user).
+   * Iki šiol ji gyveno TIK F12 picker'yje (`floor12_merge.js` `_NFT_MAX_PER_TYPE`), o pilies laukas
+   * imdavo VISĄ registruotą deką — todėl atsirado pilių su 12 vienodų Hog Rider'ių (vienas turėjo 16
+   * registruotų: 12 lauke, likę įeidavo pastiprinimais). Serveris tikrino tik nuosavybę grandinėje;
+   * kiekio pagal tipą netikrino niekas.
+   * Riba SERVERYJE, ne kliente: kliento cap'ą apeina bet kuris senas arba pataisytas klientas — būtent
+   * taip dabartinė padėtis ir susidarė.
+   * Paliekam 4 AUKŠČIAUSIO lygio to tipo (ta pati politika kaip F12), o likusią deko TVARKĄ išsaugom —
+   * nuo jos priklauso spawn formacija ir pastiprinimų eilė.
+   * ⚠️ Taikoma `_pureDeck`, per kurį eina VISI trys lauko keliai: `_spawnSquadFor`, `set_squad` ir
+   *   `_rebuildReserve`. Kitaip riba būtų apeinama pastiprinimais — laukas 4, o iš rezervo lįstų dar. */
+  private _capPerType(deck: DeckEntry[]): DeckEntry[] {
+    const strongestFirst = deck.map((e, i) => ({ e, i })).sort((a, b) => (b.e.level || 0) - (a.e.level || 0) || a.i - b.i);
+    const perType = new Map<string, number>();
+    const keep = new Set<number>();
+    for (const { e, i } of strongestFirst) {
+      const t = e.utype || "";
+      const n = perType.get(t) || 0;
+      if (n >= MAX_PER_TYPE) continue;
+      perType.set(t, n + 1);
+      keep.add(i);
+    }
+    if (keep.size !== deck.length) console.log(`[F9PvpRoom] ⚔️🔢 ${MAX_PER_TYPE}×/tipo riba: ${deck.length} → ${keep.size} unit(ai)`);
+    return deck.filter((_, i) => keep.has(i));
   }
   // 🛡 08-14 FAIL-CLOSED SAFE gate (user „kasu sau SAFE, o mane užpuolė"): duty tikrinamas AUTORITETINGAI.
   //   In-memory cem (šviežiausia tiesa — apima ką tik perjungtą duty) ARBA, jo nesant, ŠVIEŽIAS DB skaitymas
