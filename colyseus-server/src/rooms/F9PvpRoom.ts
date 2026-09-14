@@ -596,7 +596,7 @@ const DEFAULT_SQUAD = ["skull", "archer", "harpoon_fish", "shaman", "pigronke", 
 const F9_ROOM_IDLE_MS = Number(process.env.F9_ROOM_IDLE_MS) || 360_000;   // 🧟 6min be aktyvumo → zombie kambarys disposinamas
 const MAX_DECK = 30;                         // gaunamo registruoto deko cap (Power Deck + RonkeVerse)
 const MAX_ACTIVE = 12;                        // kiek unitų AKTYVŪS mūšy vienu metu (Battle Squad); likę = rezervas
-const MAX_PER_TYPE = Number(process.env.F9_MAX_PER_TYPE) || 4;   // ⚔️ 09-13 user: daugiausiai TIEK vieno tipo NFT unitų lauke (IR rezerve)
+const MAX_PER_TYPE = Number(process.env.F9_MAX_PER_TYPE) || 4;   // ⚔️ 09-13 user: daugiausiai TIEK vieno tipo NFT unitų lauke VIENU METU (09-14: rezervas neribojamas — žr. _typeRoom)
 const AI_DEF_OWNER = "AI_DEFENDER";           // 🤖 async gynybos unitų „savininkas" (savininkas offline; rezervą turi kaip ir žmogus)
 const VALID_UTYPES = new Set(Object.keys(BASE_HP));
 // Žaidėjo deko įrašas (iš join opts.deck).
@@ -2206,11 +2206,14 @@ export class F9PvpRoom extends Room<F9State> {
     //   šiame mūšyje) — kitaip tas pats NFT įeitų antrą kartą (dvigubas injury roll, „prisikėlimas").
     const onField = new Set<string>();
     this.state.units.forEach((u) => { if (u.owner === fallen.owner && u.tokenId) onField.add(u.tokenId); });
-    let entry = pool.shift()!;                         // FIFO
-    while (entry.tokenId && onField.has(entry.tokenId)) {
-      if (!pool.length) return;                        // visas rezervas — dubliai → nieko neįleidžiam
-      entry = pool.shift()!;
-    }
+    for (let i = pool.length - 1; i >= 0; i--) if (pool[i].tokenId && onField.has(pool[i].tokenId)) pool.splice(i, 1);   // dubliai iš eilės — visam
+    // ⚔️🔢 FIFO, bet tipas, kurio lauke jau 4 gyvi, praleidžiamas — įrašas lieka eilėje savo vietoje (žr. _typeRoom)
+    const counts = this._aliveTypeCounts(fallen.owner);
+    let idx = pool.findIndex((e) => this._typeRoom(counts, e));
+    // eilėje liko tik „pilnų" tipų įrašai → perskaičiuojam (gal kas pasveiko po būrio sudarymo), kaip tuščiai eilei
+    if (idx < 0) { pool = this._rebuildReserve(p); idx = pool.findIndex((e) => this._typeRoom(counts, e)); }
+    if (idx < 0) return;
+    const entry = pool.splice(idx, 1)[0];
     const sp = FFA_SPAWNS[p.team % FFA_SPAWNS.length];
     this._spawnOneUnit(p, entry, sp.x, sp.y);          // pastiprinimas ateina prie savo bazės krašto
     if (p.team === DEFENDER_TEAM) this._matchReinf.def++; else this._matchReinf.atk++;   // 🪖 diagnostikai
@@ -2226,12 +2229,12 @@ export class F9PvpRoom extends Room<F9State> {
     let alive = 0;
     this.state.units.forEach((u) => { if (u.owner === AI_DEF_OWNER && u.alive) alive++; });
     if (alive >= MAX_ACTIVE) return;                   // lauke jau pilna — nieko neįleidžiam
-    let entry = pool.shift();
-    while (entry && entry.tokenId && onField.has(entry.tokenId)) {
-      if (!pool.length) return;
-      entry = pool.shift();
-    }
-    if (!entry) return;
+    for (let i = pool.length - 1; i >= 0; i--) if (pool[i].tokenId && onField.has(pool[i].tokenId)) pool.splice(i, 1);   // dubliai iš eilės — visam
+    // ⚔️🔢 FIFO, bet tipas, kurio lauke jau 4 gyvi, praleidžiamas — įrašas lieka eilėje savo vietoje (žr. _typeRoom)
+    const counts = this._aliveTypeCounts(AI_DEF_OWNER);
+    const idx = pool.findIndex((e) => this._typeRoom(counts, e));
+    if (idx < 0) return;
+    const entry = pool.splice(idx, 1)[0];
     const inj = this._injuredSet(this._ownerAddr), dead = this._deadSet(this._ownerAddr);
     if (entry.tokenId && (inj.has(entry.tokenId) || dead.has(entry.tokenId))) return;   // per mūšį pateko į ligoninę
     const u = new F9Unit();
@@ -2429,16 +2432,15 @@ export class F9PvpRoom extends Room<F9State> {
         if (u.alive) alive++;
       });
       const ready = deck.filter((e) => e.tokenId && !injured.has(e.tokenId) && !dead.has(e.tokenId) && !onField.has(e.tokenId));
-      let added = 0;
-      for (const entry of ready) {
-        if (alive + added >= MAX_ACTIVE) break;
-        const s = homeFormSlot(alive + added);
+      // ⚔️🔢 į lauką — kiek telpa iki MAX_ACTIVE IR kol tipui lauke nėra 4 gyvų (žr. _typeRoom)
+      const { take, rest } = this._takeFieldable(ready, this._aliveTypeCounts(p.sessionId), Math.max(0, MAX_ACTIVE - alive));
+      take.forEach((entry, k) => {
+        const s = homeFormSlot(alive + k);
         this._spawnOneUnit(p, entry, s.x, s.y);
-        added++;
-      }
+      });
       // rezervas = paruošti, netilpę į lauką (reinforcement eilė)
-      this._reserves.set(p.sessionId, ready.slice(added));
-      return added;
+      this._reserves.set(p.sessionId, rest);
+      return take.length;
     } finally { this._deployBusy = false; }
   }
   // Šiuo metu ligoninėje esančių tokenId aibė (visa eilė — ir gydomi, ir laukiantys).
@@ -2614,34 +2616,43 @@ export class F9PvpRoom extends Room<F9State> {
   //   nemokami/test unitai (tuščias tokenId arba 'dev...') IŠNYKSTA. Fake tik kol NĖRA NFT.
   private _pureDeck(deck: DeckEntry[]): DeckEntry[] {
     const hasNft = deck.some((d) => d.tokenId && !/^dev/i.test(d.tokenId));
-    if (!hasNft) return deck;   // 🧪 dev/fake unitai (nauji žaidėjai, lokalūs testai) — riba jiems netaikoma
-    return this._capPerType(deck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId)));
+    if (!hasNft) return deck;   // 🧪 dev/fake unitai (nauji žaidėjai, lokalūs testai)
+    return deck.filter((d) => d.tokenId && !/^dev/i.test(d.tokenId));
   }
 
-  /* ⚔️🔢 4× VIENO TIPO — LAUKO TAISYKLĖ (2026-09-13 user).
-   * Iki šiol ji gyveno TIK F12 picker'yje (`floor12_merge.js` `_NFT_MAX_PER_TYPE`), o pilies laukas
-   * imdavo VISĄ registruotą deką — todėl atsirado pilių su 12 vienodų Hog Rider'ių (vienas turėjo 16
-   * registruotų: 12 lauke, likę įeidavo pastiprinimais). Serveris tikrino tik nuosavybę grandinėje;
-   * kiekio pagal tipą netikrino niekas.
-   * Riba SERVERYJE, ne kliente: kliento cap'ą apeina bet kuris senas arba pataisytas klientas — būtent
-   * taip dabartinė padėtis ir susidarė.
-   * Paliekam 4 AUKŠČIAUSIO lygio to tipo (ta pati politika kaip F12), o likusią deko TVARKĄ išsaugom —
-   * nuo jos priklauso spawn formacija ir pastiprinimų eilė.
-   * ⚠️ Taikoma `_pureDeck`, per kurį eina VISI trys lauko keliai: `_spawnSquadFor`, `set_squad` ir
-   *   `_rebuildReserve`. Kitaip riba būtų apeinama pastiprinimais — laukas 4, o iš rezervo lįstų dar. */
-  private _capPerType(deck: DeckEntry[]): DeckEntry[] {
-    const strongestFirst = deck.map((e, i) => ({ e, i })).sort((a, b) => (b.e.level || 0) - (a.e.level || 0) || a.i - b.i);
-    const perType = new Map<string, number>();
-    const keep = new Set<number>();
-    for (const { e, i } of strongestFirst) {
-      const t = e.utype || "";
-      const n = perType.get(t) || 0;
-      if (n >= MAX_PER_TYPE) continue;
-      perType.set(t, n + 1);
-      keep.add(i);
+  /* ⚔️🔢 4× VIENO TIPO — LAUKE VIENU METU (09-13 user, patikslinta 09-14).
+   * 09-13 riba gyveno `_pureDeck` ir kirpo PATĮ DEKĄ: iš kiekvieno tipo mūšyje dalyvaudavo tik 4, visam
+   * mūšiui. User 09-14: „įregistruota netoli 30, pasinaudojo 17" (archer×12 → 4, shaman×6 → 4, …) —
+   * likę 11 stovėjo nepanaudoti, nors rezervas tam ir skirtas.
+   * DABAR dekas nekerpamas. Tikrinama tik, ar lauke jau stovi 4 GYVI to tipo: tada 5-tas laukia rezerve
+   * ir įeina, kai lauke atsiranda vietos tam tipui (žuvus to tipo unitui). Taip riba lieka lauke, o
+   * rezervas panaudojamas visas.
+   * ⚠️ Tikrinama VISUOSE lauko keliuose: `_spawnSquadFor`, `set_squad`, `_deployReady`, `_tryReinforce`,
+   *   `_spawnAiDefenders`, `_reinforceAiDefender`. Praleidus bent vieną, riba būtų apeinama.
+   * `dev`/fake unitai (be tikro tokenId) ribos neturi — jie egzistuoja tik deke be NFT. */
+  private _aliveTypeCounts(owner: string): Map<string, number> {
+    const m = new Map<string, number>();
+    this.state.units.forEach((u) => {
+      if (u.owner !== owner || !u.alive || !u.tokenId || /^dev/i.test(u.tokenId)) return;
+      m.set(u.utype, (m.get(u.utype) || 0) + 1);
+    });
+    return m;
+  }
+  private _typeRoom(counts: Map<string, number>, e: { utype: string; tokenId: string }): boolean {
+    if (!e.tokenId || /^dev/i.test(e.tokenId)) return true;
+    return (counts.get(e.utype) || 0) < MAX_PER_TYPE;
+  }
+  /* Iš eilės (tvarka išsaugoma) paima iki `slots` įrašų, kurių tipui lauke dar yra vietos; `counts`
+   * atnaujinamas paimtiems. Grąžina paimtus ir likusius (likę — rezervas, ta pačia tvarka). */
+  private _takeFieldable(entries: DeckEntry[], counts: Map<string, number>, slots: number): { take: DeckEntry[]; rest: DeckEntry[] } {
+    const take: DeckEntry[] = [], rest: DeckEntry[] = [];
+    for (const e of entries) {
+      if (take.length < slots && this._typeRoom(counts, e)) {
+        take.push(e);
+        if (e.tokenId && !/^dev/i.test(e.tokenId)) counts.set(e.utype, (counts.get(e.utype) || 0) + 1);
+      } else rest.push(e);
     }
-    if (keep.size !== deck.length) console.log(`[F9PvpRoom] ⚔️🔢 ${MAX_PER_TYPE}×/tipo riba: ${deck.length} → ${keep.size} unit(ai)`);
-    return deck.filter((_, i) => keep.has(i));
+    return { take, rest };
   }
   // 🛡 08-14 FAIL-CLOSED SAFE gate (user „kasu sau SAFE, o mane užpuolė"): duty tikrinamas AUTORITETINGAI.
   //   In-memory cem (šviežiausia tiesa — apima ką tik perjungtą duty) ARBA, jo nesant, ŠVIEŽIAS DB skaitymas
@@ -3074,8 +3085,9 @@ export class F9PvpRoom extends Room<F9State> {
     const snap = (isOwner && this._restoreUnits) ? new Map(this._restoreUnits.filter((s) => s.tokenId).map((s) => [s.tokenId, s])) : null;
     // 🪖 AKTYVŪS = pirmi MAX_ACTIVE (12); likę → REZERVAS (įeina kai aktyvus krenta). Rezervą NErūšiuojam į formaciją.
     const _active = this._activeCount.get(p.sessionId) || MAX_ACTIVE;   // ⚔ kiek žaidėjas nori lauke (default 12)
-    const activeSquad = squad.slice(0, _active);
-    this._reserves.set(p.sessionId, squad.slice(_active));   // deko likutis = rezervas (FIFO reinforcement, palaiko aktyvių skaičių)
+    // ⚔️🔢 aktyvūs imami deko tvarka, bet ne daugiau 4 vieno tipo; to tipo 5-tas+ lieka rezerve (žr. _typeRoom)
+    const { take: activeSquad, rest: reserveSquad } = this._takeFieldable(squad, this._aliveTypeCounts(p.sessionId), _active);
+    this._reserves.set(p.sessionId, reserveSquad);   // deko likutis = rezervas (FIFO reinforcement, palaiko aktyvių skaičių)
     // 🗂️ SURŪŠIUOTA pagal TIPĄ (+ level) → to paties tipo unitai greta formacijoj → lengviau formuoti pakus.
     const ordered = activeSquad.slice().sort((a, b) => (a.utype < b.utype ? -1 : a.utype > b.utype ? 1 : ((b.level || 0) - (a.level || 0))));
     const n = ordered.length, PER_COL = 6, ROW_GAP = 1.3, COL_GAP = 1.6;
@@ -3112,12 +3124,16 @@ export class F9PvpRoom extends Room<F9State> {
     // 🎖️ senas mišrus snapshot'as (fake+NFT iš dev laikų) → jei yra NFT, fake gynėjai nespawn'inami
     const snapHasNft = snap.some((s) => s && s.tokenId && !/^dev/i.test(s.tokenId));
     let _spawned = 0;   // 🔒 07-06: cap MAX_ACTIVE — pasenęs per-didelis snapshot (set_squad >12 bug) negina su pertekliumi
+    const _typeCounts = this._aliveTypeCounts(AI_DEF_OWNER);
     for (const s of snap) {
       if (_spawned >= MAX_ACTIVE) break;
       if (!s || !s.utype) continue;
       if (snapHasNft && !(s.tokenId && !/^dev/i.test(s.tokenId))) continue;
       if (s.tokenId && injuredSet.has(s.tokenId)) continue;
       if (s.tokenId && deadSet.has(s.tokenId)) continue;   // 💀
+      // ⚔️🔢 tipui lauke jau 4 → šitas lieka rezervui (jį žemiau pasiima `_push`, nes nespawnintas)
+      if (!this._typeRoom(_typeCounts, { utype: s.utype, tokenId: s.tokenId || "" })) continue;
+      if (s.tokenId && !/^dev/i.test(s.tokenId)) _typeCounts.set(s.utype, (_typeCounts.get(s.utype) || 0) + 1);
       const u = new F9Unit();
       u.id = `u${++this._uidCounter}`;
       u.owner = AI_DEF_OWNER;
@@ -3403,8 +3419,9 @@ export class F9PvpRoom extends Room<F9State> {
     void sp;
     const injuredSet2 = this._injuredSet(p.address);
     const deckOk = newDeck.filter((e) => !e.tokenId || !injuredSet2.has(e.tokenId));   // ligoninėj gulintys nedalyvauja
-    const activeSlice = deckOk.slice(0, _active);
-    const restSlice = deckOk.slice(_active);
+    // ⚔️🔢 aktyvus rinkinys sudaromas iš naujo (tušti skaitliukai): ne daugiau 4 vieno tipo, 5-tas+ → rezervas.
+    //   Lauke esantys, bet į šį rinkinį nepatekę, žemiau pašalinami — tad lauke riba laikosi.
+    const { take: activeSlice, rest: restSlice } = this._takeFieldable(deckOk, new Map(), _active);
     const activeTokens = new Set(activeSlice.map((e) => e.tokenId).filter((t) => t));
     // 1) PAŠALINTI esamus, kurių tokenId nebe AKTYVIŲJŲ tarpe (🐛 07-06 FIX: anksčiau lygino su VISU deku —
     //    per-registravus deką seni lauko unitai nusikeldavo į 13+ pozicijas, likdavo lauke, o nauji 12 dar
