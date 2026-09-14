@@ -17934,6 +17934,7 @@ async function _handleTrophyClaim(claimable) {
     // ⚒️ mint / 🎳 pinball trofėjai — ta pati logika (iškart atnaujinam progresą po claim'o)
     try { if (/^T_mints_/.test(claimable.id) && typeof _invalidateMintProgCache === 'function') _invalidateMintProgCache(); } catch (_) {}
     try { if (/^T_pinball_/.test(claimable.id) && typeof _invalidatePinballProgCache === 'function') _invalidatePinballProgCache(); } catch (_) {}
+    try { if (/^T_pbfloor_/.test(claimable.id) && typeof _invalidatePbFloorProgCache === 'function') _invalidatePbFloorProgCache(); } catch (_) {}
   } catch (e) {
     console.warn('[trophy claim]', e);
     statusEl.textContent = 'Error: ' + (e?.shortMessage || e?.message || String(e)).slice(0, 80);
@@ -19761,6 +19762,126 @@ function _appendPinballTrophyCard(grid) {
   });
 }
 
+// ── 🎳🏢 PINBALL FLOOR trophy mission (2026-09-14) ──────────────────────────
+// Reach floor 5 → trophy #1, then 7, 9, 11, 13 → one more each (5 total).
+// Server (rapid-endpoint): highest floor across all pinball seasons; claimed tiers from the contract.
+const _PBFLOOR_STEPS = [5, 7, 9, 11, 13];
+let _pbFloorProgCache = null;   // { wallet, at, res }
+const _PBFLOOR_PROG_TTL = 5 * 60 * 1000;
+function _invalidatePbFloorProgCache() { _pbFloorProgCache = null; }
+function _fetchPbFloorProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_pbFloorProgCache && _pbFloorProgCache.wallet === wallet && (now - _pbFloorProgCache.at) < _PBFLOOR_PROG_TTL) {
+    return Promise.resolve(_pbFloorProgCache.res);
+  }
+  return window.SupabaseSync.validateAchievement('T_pbfloor_progress').then(res => {
+    _pbFloorProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
+function _appendPinballFloorTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-pinball';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">🏢</span>
+      <span class="tier-card-title">PINBALL FLOORS</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading your highest pinball floor…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.insertBefore(card, grid.firstChild);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your pinball floor progress.</span></div></div>`;
+    return;
+  }
+
+  _fetchPbFloorProgress().then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || typeof d.floor !== 'number') {
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Climb the pinball tower — floor 5 earns a trophy, then 7, 9, 11 and 13.</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load pinball floor (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    const floor = d.floor | 0;
+    const steps = (d.steps && d.steps.length) ? d.steps : _PBFLOOR_STEPS;
+    const tiers = d.tiers || steps.length;
+    const nextTier = d.nextTier || 1;
+    const nextThreshold = (typeof d.nextThreshold === 'number') ? d.nextThreshold : steps[Math.min(steps.length, nextTier) - 1];
+    const onchainOk = d.onchainOk !== false;
+    const claimable = !!d.claimableNow && onchainOk;
+    const claimedCount = Math.max(0, Math.min(tiers, nextTier - 1));
+    const done = claimedCount >= tiers;
+
+    progEl.textContent = `${claimedCount}/${tiers} claimed`;
+    progEl.className = 'tier-card-progress' + (claimable || done ? ' complete' : '');
+
+    const prev = claimedCount >= 1 ? steps[claimedCount - 1] : 0;
+    const span = Math.max(1, nextThreshold - prev);
+    const pct = done ? 100 : Math.max(0, Math.min(100, Math.round(((floor - prev) / span) * 100)));
+    const ladder = steps.map((t) => `<span style="opacity:${floor >= t ? 1 : 0.35}">${floor >= t ? '★' : '☆'} ${t}</span>`).join(' · ');
+    reqsEl.innerHTML = `
+      <div class="tier-req ${claimable ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${claimable ? '✓' : '○'}</span>
+          <span class="tier-req-text">${done ? 'All pinball floor trophies claimed' : 'Trophy #' + nextTier + ': reach floor ' + nextThreshold}</span>
+          <span class="tier-req-progress">${_formatProgress(Math.min(floor, nextThreshold), nextThreshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text">${ladder} &nbsp;·&nbsp; highest floor in any pinball season</span></div></div>`;
+
+    if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled">CLAIM NFT (Floor ${nextThreshold})</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_pbfloor_' + nextTier,
+          label: 'PINBALL FLOOR ' + nextThreshold,
+          desc: 'Claim your trophy for reaching floor ' + nextThreshold + ' in RonkePong pinball.'
+            + (nextTier < tiers ? ' The next one unlocks at floor ' + steps[nextTier] + '.' : ''),
+        }), 200);
+      });
+    } else if (done) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🏆 ALL ${tiers} CLAIMED</span></button>`;
+    } else if (!onchainOk) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">⏳ On-chain check unavailable</span>
+        <span class="tcb-hint">Floor ${floor} · reopen panel to retry</span></button>`;
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 Reach floor ${nextThreshold}</span>
+        <span class="tcb-hint">Highest floor: ${floor} — climb the pinball tower</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading pinball floor.</span></div></div>`;
+    console.warn('[pinball floor trophy]', err);
+  });
+}
+
 function renderTrophyPanel() {
   const grid = document.getElementById('trophy-tier-grid');
   if (!grid) return;
@@ -19829,6 +19950,8 @@ function renderTrophyPanel() {
   _appendMintTrophyCard(grid);
   // 🎳 PINBALL 3K single mission — įterpiama VIRŠ mint (viršuje panelės).
   _appendPinballTrophyCard(grid);
+  // 🏢 PINBALL FLOORS misija (2026-09-14) — aukštai 5 / 7 / 9 / 11 / 13.
+  _appendPinballFloorTrophyCard(grid);
   // 🏅 TETRIS LEAGUE misija (2026-08-15) — trofėjus už SILVER ir kiekvieną aukštesnę lygą.
   _appendLeagueTrophyCard(grid);
   // 🧱 TETRIS COUNT misija (2026-08-16) — 30 / 69 / 169 tetrisai (4 linijos vienu metu).

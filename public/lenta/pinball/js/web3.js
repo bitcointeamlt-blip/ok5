@@ -342,6 +342,9 @@
     const best = Math.max(prevBest, score);
     const total = prevTotal + score;                                   // BENDRAS kaupiasi visada
     const bestFloor = score > prevBest ? (floor || 1) : (b.floor || 1);
+    // 🏢 Highest floor reached in ANY game this season (the floor trophy mission reads it).
+    //   `floor` above is only the floor of the best-score game, so it can be lower.
+    const maxFloor = Math.max(b.maxFloor || 0, b.floor || 0, Math.floor(floor || 1));
     // Monotoniškumo saugiklis — net jei read'as grąžintų pasenusius duomenis, niekada nemažinam.
     if (total < prevTotal || best < prevBest || prevGames + 1 < prevGames) {
       return { ok: false, reason: 'regression_guard', best: prevBest, total: prevTotal };
@@ -350,7 +353,7 @@
       const w = await fetch(SB_URL + '/rest/v1/' + BOARD_TABLE, {
         method: 'POST',
         headers: sbHeaders({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
-        body: JSON.stringify({ ronin_address: key, buildings: { score: best, total: total, floor: bestFloor, games: prevGames + 1, addr: state.address } }),
+        body: JSON.stringify({ ronin_address: key, buildings: { score: best, total: total, floor: bestFloor, maxFloor: maxFloor, games: prevGames + 1, addr: state.address } }),
       });
       if (!w.ok) throw new Error('HTTP ' + w.status);
     } catch (_) {
