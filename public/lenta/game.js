@@ -17935,6 +17935,7 @@ async function _handleTrophyClaim(claimable) {
     try { if (/^T_mints_/.test(claimable.id) && typeof _invalidateMintProgCache === 'function') _invalidateMintProgCache(); } catch (_) {}
     try { if (/^T_pinball_/.test(claimable.id) && typeof _invalidatePinballProgCache === 'function') _invalidatePinballProgCache(); } catch (_) {}
     try { if (/^T_pbfloor_/.test(claimable.id) && typeof _invalidatePbFloorProgCache === 'function') _invalidatePbFloorProgCache(); } catch (_) {}
+    try { if (/^T_unitlvl_/.test(claimable.id) && typeof _invalidateUnitLvlProgCache === 'function') _invalidateUnitLvlProgCache(); } catch (_) {}
   } catch (e) {
     console.warn('[trophy claim]', e);
     statusEl.textContent = 'Error: ' + (e?.shortMessage || e?.message || String(e)).slice(0, 80);
@@ -19882,6 +19883,140 @@ function _appendPinballFloorTrophyCard(grid) {
   });
 }
 
+// ── ⭐ UNIT LEVEL trophy mission (2026-09-15) ────────────────────────────────
+// Hold a unit at level 6 → trophy #1, then 8, 10, 15 and 20 → one more each (5 total).
+// Server (rapid-endpoint): highest on-chain level among the units the wallet holds; claimed tiers from the contract.
+const _UNITLVL_STEPS = [6, 8, 10, 15, 20];
+let _unitLvlProgCache = null;   // { wallet, at, res }
+const _UNITLVL_PROG_TTL = 5 * 60 * 1000;
+function _invalidateUnitLvlProgCache() { _unitLvlProgCache = null; }
+function _fetchUnitLvlProgress() {
+  let wallet = '';
+  try { wallet = (window.Wallet && window.Wallet.getAddress && window.Wallet.getAddress()) || ''; } catch (_) {}
+  const now = Date.now();
+  if (_unitLvlProgCache && _unitLvlProgCache.wallet === wallet && (now - _unitLvlProgCache.at) < _UNITLVL_PROG_TTL) {
+    return Promise.resolve(_unitLvlProgCache.res);
+  }
+  return window.SupabaseSync.validateAchievement('T_unitlvl_progress').then(res => {
+    _unitLvlProgCache = { wallet: wallet, at: Date.now(), res: res };
+    return res;
+  });
+}
+function _appendUnitLevelTrophyCard(grid) {
+  const card = document.createElement('div');
+  card.className = 'tier-card tier-unitlvl';
+  card.innerHTML = `
+    <div class="tier-card-header">
+      <span class="tier-card-icon">⭐</span>
+      <span class="tier-card-title">UNIT LEVEL</span>
+      <span class="tier-card-progress">…</span>
+    </div>
+    <div class="tier-reqs"><div class="tier-req"><div class="tier-req-row">
+      <span class="tier-req-text">Loading your unit levels…</span></div></div></div>
+    <div class="tier-actions"></div>`;
+  grid.insertBefore(card, grid.firstChild);
+
+  const progEl = card.querySelector('.tier-card-progress');
+  const reqsEl = card.querySelector('.tier-reqs');
+  const actEl = card.querySelector('.tier-actions');
+
+  const connected = window.Wallet && window.Wallet.isConnected && window.Wallet.isConnected();
+  if (!connected || !window.SupabaseSync || typeof window.SupabaseSync.validateAchievement !== 'function') {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Connect wallet to view your unit level progress.</span></div></div>`;
+    return;
+  }
+
+  _fetchUnitLvlProgress().then(res => {
+    const d = res && res.data;
+    if (!res || !res.ok || !d || d.kind !== 'unitlvl_progress') {
+      const errTxt = (d && d.error) || '';
+      if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
+        progEl.textContent = 'soon';
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Level up your units — hold a level 6 unit for a trophy, then level 8, 10, 15 and 20.</span></div></div>`;
+        actEl.className = 'tier-actions tier-actions-locked';
+        actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
+        return;
+      }
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Could not load unit levels (${errTxt || (res && res.status) || 'error'}).</span></div></div>`;
+      return;
+    }
+    const steps = (d.steps && d.steps.length) ? d.steps : _UNITLVL_STEPS;
+    const tiers = d.tiers || steps.length;
+    const onchainOk = d.onchainOk !== false && typeof d.level === 'number';
+    if (!onchainOk) {
+      progEl.textContent = '—';
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Hold a level 6 unit for a trophy, then level 8, 10, 15 and 20.</span></div></div>`;
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">⏳ On-chain check unavailable</span>
+        <span class="tcb-hint">Reopen panel to retry</span></button>`;
+      return;
+    }
+    const level = d.level | 0;
+    const nextTier = d.nextTier || 1;
+    const claimable = !!d.claimableNow && !!d.claimTier;
+    const blockedTier = claimable ? 0 : (d.blockedTier | 0);
+    // Tier the card talks about: the claimable one, else the one blocked by a used unit, else the next unclaimed.
+    const focusTier = Math.min(steps.length, claimable ? d.claimTier : (blockedTier || nextTier));
+    const focusThreshold = steps[focusTier - 1];
+    const claimedCount = (typeof d.claimedCount === 'number') ? d.claimedCount : Math.max(0, Math.min(tiers, nextTier - 1));
+    const done = claimedCount >= tiers;
+
+    progEl.textContent = `${claimedCount}/${tiers} claimed`;
+    progEl.className = 'tier-card-progress' + (claimable || done ? ' complete' : '');
+
+    const prev = focusTier > 1 ? steps[focusTier - 2] : 0;
+    const span = Math.max(1, focusThreshold - prev);
+    const pct = done ? 100 : Math.max(0, Math.min(100, Math.round(((level - prev) / span) * 100)));
+    const ladder = steps.map((t) => `<span style="opacity:${level >= t ? 1 : 0.35}">${level >= t ? '★' : '☆'} Lv ${t}</span>`).join(' · ');
+    const best = d.tokenId ? `best: #${d.tokenId} (Lv ${level})` : 'no units held';
+    reqsEl.innerHTML = `
+      <div class="tier-req ${claimable ? 'met' : ''}">
+        <div class="tier-req-row">
+          <span class="tier-req-check">${claimable ? '✓' : '○'}</span>
+          <span class="tier-req-text">${done ? 'All unit level trophies claimed' : 'Trophy #' + focusTier + ': hold a level ' + focusThreshold + ' unit'}</span>
+          <span class="tier-req-progress">${_formatProgress(Math.min(level, focusThreshold), focusThreshold)}</span>
+        </div>
+        <div class="tier-req-bar"><div class="tier-req-bar-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="tier-req" style="opacity:.7"><div class="tier-req-row"><span class="tier-req-text" style="line-height:1.6">${ladder}<br>${best} &nbsp;·&nbsp; market listings don't count &nbsp;·&nbsp; 1 unit = 1 wallet per trophy</span></div></div>`;
+
+    if (claimable) {
+      actEl.className = 'tier-actions';
+      actEl.innerHTML = `<button class="tier-claim-btn enabled">CLAIM NFT (Lv ${focusThreshold})</button>`;
+      actEl.querySelector('button').addEventListener('click', () => {
+        closeTrophyPanel();
+        setTimeout(() => showTrophyModal({
+          id: 'T_unitlvl_' + focusTier,
+          label: 'UNIT LEVEL ' + focusThreshold,
+          desc: 'Claim your trophy for holding a level ' + focusThreshold + ' unit'
+            + (d.claimTokenId ? ' (#' + d.claimTokenId + ')' : '') + '.'
+            + (focusTier < tiers ? ' The next one unlocks at level ' + steps[focusTier] + '.' : ''),
+        }), 200);
+      });
+    } else if (done) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🏆 ALL ${tiers} CLAIMED</span></button>`;
+    } else if (blockedTier) {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 Unit already used</span>
+        <span class="tcb-hint">Your level ${focusThreshold}+ units already unlocked this trophy for another wallet</span></button>`;
+    } else {
+      actEl.className = 'tier-actions tier-actions-locked';
+      actEl.innerHTML = `<button class="tier-claim-btn disabled">
+        <span class="tcb-lock">🔒 Hold a level ${focusThreshold} unit</span>
+        <span class="tcb-hint">Highest held unit: Lv ${level} — win battles to earn XP</span></button>`;
+    }
+  }).catch(err => {
+    progEl.textContent = '—';
+    reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Network error loading unit levels.</span></div></div>`;
+    console.warn('[unit level trophy]', err);
+  });
+}
+
 function renderTrophyPanel() {
   const grid = document.getElementById('trophy-tier-grid');
   if (!grid) return;
@@ -19948,6 +20083,8 @@ function renderTrophyPanel() {
   _appendDeathTrophyCard(grid);
   // ⚒️ UNITS-MINTED repeatable mission (balanceOf) — įterpiama VIRŠ death.
   _appendMintTrophyCard(grid);
+  // ⭐ UNIT LEVEL misija (2026-09-15) — laikai unitą Lv 6 / 8 / 10 / 15 / 20; įterpiama VIRŠ mint.
+  _appendUnitLevelTrophyCard(grid);
   // 🎳 PINBALL 3K single mission — įterpiama VIRŠ mint (viršuje panelės).
   _appendPinballTrophyCard(grid);
   // 🏢 PINBALL FLOORS misija (2026-09-14) — aukštai 5 / 7 / 9 / 11 / 13.
