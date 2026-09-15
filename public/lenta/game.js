@@ -19884,9 +19884,9 @@ function _appendPinballFloorTrophyCard(grid) {
 }
 
 // ── ⭐ UNIT LEVEL trophy mission (2026-09-15) ────────────────────────────────
-// Hold a unit at level 6 → trophy #1, then 8, 10, 15 and 20 → one more each (5 total).
+// Hold a unit at level 10 → trophy #1, then 15 and 20 → one more each (3 total).
 // Server (rapid-endpoint): highest on-chain level among the units the wallet holds; claimed tiers from the contract.
-const _UNITLVL_STEPS = [6, 8, 10, 15, 20];
+const _UNITLVL_STEPS = [10, 15, 20];
 let _unitLvlProgCache = null;   // { wallet, at, res }
 const _UNITLVL_PROG_TTL = 5 * 60 * 1000;
 function _invalidateUnitLvlProgCache() { _unitLvlProgCache = null; }
@@ -19933,7 +19933,7 @@ function _appendUnitLevelTrophyCard(grid) {
       const errTxt = (d && d.error) || '';
       if (/unknown achievement/i.test(errTxt) || (res && res.status === 400)) {
         progEl.textContent = 'soon';
-        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Level up your units — hold a level 6 unit for a trophy, then level 8, 10, 15 and 20.</span></div></div>`;
+        reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Level up your units — hold a level 10 unit for a trophy, then level 15 and 20.</span></div></div>`;
         actEl.className = 'tier-actions tier-actions-locked';
         actEl.innerHTML = `<button class="tier-claim-btn disabled"><span class="tcb-lock">🔒 ACTIVATING SOON</span></button>`;
         return;
@@ -19947,7 +19947,7 @@ function _appendUnitLevelTrophyCard(grid) {
     const onchainOk = d.onchainOk !== false && typeof d.level === 'number';
     if (!onchainOk) {
       progEl.textContent = '—';
-      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Hold a level 6 unit for a trophy, then level 8, 10, 15 and 20.</span></div></div>`;
+      reqsEl.innerHTML = `<div class="tier-req"><div class="tier-req-row"><span class="tier-req-text">Hold a level 10 unit for a trophy, then level 15 and 20.</span></div></div>`;
       actEl.className = 'tier-actions tier-actions-locked';
       actEl.innerHTML = `<button class="tier-claim-btn disabled">
         <span class="tcb-lock">⏳ On-chain check unavailable</span>
@@ -20083,7 +20083,7 @@ function renderTrophyPanel() {
   _appendDeathTrophyCard(grid);
   // ⚒️ UNITS-MINTED repeatable mission (balanceOf) — įterpiama VIRŠ death.
   _appendMintTrophyCard(grid);
-  // ⭐ UNIT LEVEL misija (2026-09-15) — laikai unitą Lv 6 / 8 / 10 / 15 / 20; įterpiama VIRŠ mint.
+  // ⭐ UNIT LEVEL misija (2026-09-15) — laikai unitą Lv 10 / 15 / 20; įterpiama VIRŠ mint.
   _appendUnitLevelTrophyCard(grid);
   // 🎳 PINBALL 3K single mission — įterpiama VIRŠ mint (viršuje panelės).
   _appendPinballTrophyCard(grid);
