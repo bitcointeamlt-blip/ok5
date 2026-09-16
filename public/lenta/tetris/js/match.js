@@ -113,7 +113,19 @@
         if (this.state === 'playing') { this.state = 'paused'; global.Sfx.play('click'); }
         else if (this.state === 'paused') { this.state = 'playing'; global.Sfx.play('click'); }
         break;
-      case 'mute': global.Sfx.toggle(); global.Sfx.play('click'); break;
+      /* 🔊 mute grąžina TĄ PATĮ lygį, kuris buvo prieš tylą; patvirtinamąjį „click"
+       * groja pats Sfx (žr. setLevel audio.js) — čia jo kartoti nereikia. */
+      case 'mute': global.Sfx.toggle(); break;
+      case 'volup': global.Sfx.unlock(); global.Sfx.step(+1); break;
+      case 'voldown': global.Sfx.step(-1); break;
+      /* 📣 mačo šūksniai (countdown / GO / rezultatas) — atskiras jungiklis;
+       * pritildyta reikšmė įsimenama, kad įjungus grįžtų ta pati, o ne maksimumas. */
+      case 'cuemute':
+        global.Sfx.unlock();
+        var cueCur = global.Sfx.cueLevel();
+        if (cueCur > 0) { this._cueLast = cueCur; global.Sfx.setCueLevel(0); }
+        else global.Sfx.setCueLevel(this._cueLast || 3);
+        break;
       case 'fullscreen':
         if (global.Input && global.Input.toggleFullscreen) global.Input.toggleFullscreen();
         global.Sfx.play('click');

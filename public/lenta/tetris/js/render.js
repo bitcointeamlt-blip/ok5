@@ -2573,6 +2573,96 @@
     ctx.restore();
   };
 
+  /* 🔊 GARSO VALDIKLIS (2026-09-16) — apatinė dešinė juosta, matomas VISUOSE ekranuose.
+   * DVI grupės ŠALIA (ne viena virš kitos), nes lentos baigiasi ties y=326 ir apačioje lieka
+   * vos ~34 px laisvos juostos: dvi eilutės viena ant kitos telefone užlįstų ant priešininko lentos.
+   *   ⚑ + 5 stulpeliai — MAČO ŠŪKSNIAI (countdown, GO, WIN/LOSE). Jie trenkia žaidėjui nieko
+   *      nepaspaudus ir buvo per garsūs (user, 09-16), todėl turi SAVO reguliatorių.
+   *   🔊 + 5 stulpeliai — BENDRAS garsumas; garsiakalbis = visiška tyla ir atgal.
+   * Anksčiau čia buvo tik užrašas „SOUND ON / MUTED" (CLEAN_UI jį gesino), o vienintelis kelias
+   * ką nors pakeisti — klavišas M, kurio telefone paprasčiausiai NĖRA.
+   * Hit-stačiakampiai paliekami match._sfxHit — juos skaito main.js (pelė/pirštas) ir input.js
+   * (kad bakstelėjimas ant valdiklio NEsuktų figūros gestų schemoje). */
+  Renderer.prototype.drawSoundWidget = function (match) {
+    var ctx = this.ctx, Sfx = global.Sfx;
+    if (!Sfx || !Sfx.level || !Sfx.cueLevel) { if (match) match._sfxHit = null; return; }
+
+    /* Telefone visas 640x360 ekranas suspaudžiamas (scale < 1) — vienas virtualus pikselis
+     * tampa mažesnis už ekrano, todėl valdiklį piešiam dvigubą, kad liktų pataikomas pirštu. */
+    var s = (this.scale && this.scale < 1) ? 2 : 1;
+    var n = Sfx.maxLevel();
+    var rowW = this._sfxRowW(s, n), grpGap = 8 * s;
+    var W = rowW * 2 + grpGap, H = 11 * s;
+    var x0 = this.vw - W - 6 * s;
+    var y0 = this.vh - H - 5 * s;
+
+    /* tamsi paklotė — valdiklis turi likti įskaitomas ir ant šviesių efektų */
+    ctx.globalAlpha = 0.45;
+    rect(ctx, x0 - 3 * s, y0 - 3 * s, W + 6 * s, H + 6 * s, U.shadow);
+    ctx.globalAlpha = 1;
+
+    var hit = [];
+    this._sfxRow(hit, x0, y0, s, n, Sfx.cueLevel(), 'cue');
+    this._sfxRow(hit, x0 + rowW + grpGap, y0, s, n, Sfx.level(), 'main');
+    if (match) match._sfxHit = hit;
+  };
+
+  /* Vienos grupės plotis: piktograma + tarpas + stulpeliai. */
+  Renderer.prototype._sfxRowW = function (s, n) {
+    return 7 * s + 4 * s + (n * 4 * s + (n - 1) * 3 * s);
+  };
+
+  /* Viena grupė. kind: 'main' = bendras garsumas, 'cue' = mačo šūksniai. */
+  Renderer.prototype._sfxRow = function (hit, x0, y0, s, n, lvl, kind) {
+    var ctx = this.ctx;
+    var barW = 4 * s, gap = 3 * s, icoW = 7 * s, icoGap = 4 * s;
+    var barsW = n * barW + (n - 1) * gap;
+    var H = 11 * s, on = lvl > 0;
+    var col = on ? U.text : U.dim;
+
+    if (kind === 'main') {
+      /* garsiakalbis: kotelis + laiptuotas kūgis */
+      rect(ctx, x0, y0 + 4 * s, 3 * s, 3 * s, col);
+      rect(ctx, x0 + 3 * s, y0 + 3 * s, s, 5 * s, col);
+      rect(ctx, x0 + 4 * s, y0 + 2 * s, s, 7 * s, col);
+      rect(ctx, x0 + 5 * s, y0 + s, s, 9 * s, col);
+      rect(ctx, x0 + 6 * s, y0, s, 11 * s, col);
+    } else {
+      /* starto vėliavėlė — ji ir reiškia „mačo pradžia / pabaiga" */
+      rect(ctx, x0, y0, s, 11 * s, col);
+      for (var fr = 0; fr < 5; fr++) rect(ctx, x0 + s, y0 + fr * s, (6 - fr) * s, s, col);
+    }
+
+    var barX = x0 + icoW + icoGap;
+    for (var i = 0; i < n; i++) {
+      var bh = (3 + i * 2) * s;                  /* stulpeliai auga — garsumą matai iš formos */
+      rect(ctx, barX + i * (barW + gap), y0 + H - bh, barW, bh,
+        i < lvl ? (kind === 'cue' ? U.you : U.gold) : U.line);
+    }
+
+    /* tyla: perbraukiam stulpelius — būsena aiški vienu žvilgsniu */
+    if (!on) {
+      for (var d = 0; d < barsW; d++) {
+        rect(ctx, barX + d, y0 + H - 1 - Math.floor(d * H / barsW), s, s, U.danger);
+      }
+    }
+
+    /* Taikiniai storesni už piešinį: visas grupės aukštis + paraštė, o stulpelio taikinys —
+     * visas jo žingsnis (barW + gap), kad nereikėtų pataikyti į 4 px juostelę. Prašovus
+     * kaimyną gauni gretimą LYGĮ, o ne svetimą veiksmą — klaida pigi. */
+    var padY = 2 * s;
+    hit.push({
+      x: x0 - 3 * s, y: y0 - padY, w: icoW + icoGap - gap, h: H + padY * 2,
+      action: kind === 'cue' ? 'cuemute' : 'mute'
+    });
+    for (var h = 0; h < n; h++) {
+      hit.push({
+        x: barX + h * (barW + gap) - gap / 2, y: y0 - padY, w: barW + gap, h: H + padY * 2,
+        action: kind === 'cue' ? 'cuelevel' : 'level', level: h + 1
+      });
+    }
+  };
+
   Renderer.prototype.draw = function (match, dt) {
     var ctx = this.ctx;
     this.t += dt;
@@ -2659,15 +2749,7 @@
     }
     ctx.globalAlpha = 1;
 
-    T.right(ctx, global.Sfx.isOn() ? 'SOUND ON' : 'MUTED', this.vw - 4, this.vh - 10, U.dim, 1);
-    /* švariame režime garso būseną rodo tik mažas perbrauktas kvadratėlis, kai išjungta */
-    if (C.CLEAN_UI && !global.Sfx.isOn()) {
-      var mx = this.vw - 12, my = this.vh - 12;
-      ctx.globalAlpha = 0.5;
-      frame(ctx, mx, my, 8, 8, U.dim);
-      for (var mi = 0; mi < 8; mi++) rect(ctx, mx + mi, my + mi, 1, 1, U.dim);
-      ctx.globalAlpha = 1;
-    }
+    this.drawSoundWidget(match);
     if (!(global.document.fullscreenElement || global.document.webkitFullscreenElement)) {
       T.text(ctx, 'F  FULLSCREEN', 4, this.vh - 10, U.dim, 1);
     }

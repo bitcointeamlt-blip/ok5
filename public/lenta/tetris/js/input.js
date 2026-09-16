@@ -36,6 +36,10 @@
     'Escape': 'menu',
     'KeyP': 'pause',
     'KeyM': 'mute',
+    /* 🔊 garsumas klaviatūra: tie patys klavišai kaip daugumoje žaidimų (− / +),
+     * plius [ ] tiems, kam skaitmenų eilutė užimta. */
+    'Minus': 'voldown', 'NumpadSubtract': 'voldown', 'BracketLeft': 'voldown',
+    'Equal': 'volup', 'NumpadAdd': 'volup', 'BracketRight': 'volup',
     'Digit1': 'ai1', 'Digit2': 'ai2', 'Digit3': 'ai3', 'Digit4': 'ai4',
     'Numpad1': 'ai1', 'Numpad2': 'ai2', 'Numpad3': 'ai3', 'Numpad4': 'ai4',
     'KeyG': 'grid',
@@ -225,6 +229,21 @@
       }
       return false;
     }
+    /* 🔊 Bakstelėjimas ant garso valdiklio NEturi sukti figūros (gestų schemoje tap = rotate). */
+    function onSfx(clientX, clientY) {
+      var list = match._sfxHit;
+      if (!list) return false;
+      var r = canvas.getBoundingClientRect();
+      var vw = (match.renderer && match.renderer.vw) || 640;
+      var vh = (match.renderer && match.renderer.vh) || 360;
+      var vx = (clientX - r.left) * (vw / Math.max(1, r.width));
+      var vy = (clientY - r.top) * (vh / Math.max(1, r.height));
+      for (var i = 0; i < list.length; i++) {
+        var b = list[i];
+        if (vx >= b.x && vx <= b.x + b.w && vy >= b.y && vy <= b.y + b.h) return true;
+      }
+      return false;
+    }
 
     canvas.addEventListener('touchstart', function (e) {
       if (touchId !== null) return;              /* sekam tik pirmą pirštą */
@@ -274,7 +293,8 @@
         if (t.identifier !== touchId) continue;
         /* 👆 BAKSTELĖJIMAS = SUKIMAS (tik gestų schemoje): pirštas beveik nepajudėjo ir greitai pakeltas. */
         if (ctlGet() === 'gestures' && !used && !softOn
-          && maxD < cellPx() * 0.5 && (nowMs() - startT) < 300 && !onPrepBtn(t.clientX, t.clientY)) {
+          && maxD < cellPx() * 0.5 && (nowMs() - startT) < 300
+          && !onPrepBtn(t.clientX, t.clientY) && !onSfx(t.clientX, t.clientY)) {
           fire('cw');
         }
         touchId = null; softStop();

@@ -157,6 +157,22 @@
       var vx = (e.clientX - r.left) * (renderer.vw / Math.max(1, r.width));
       var vy = (e.clientY - r.top) * (renderer.vh / Math.max(1, r.height));
 
+      /* 🔊 Garso valdiklis tikrinamas PIRMAS ir be jokios būsenos sąlygos — garsą turi būti
+       * galima prisukti ar nutildyti bet kur: meniu, lobyje, viduryje mačo, rezultate. */
+      if (match._sfxHit) {
+        for (var si = 0; si < match._sfxHit.length; si++) {
+          var sb = match._sfxHit[si];
+          if (vx >= sb.x && vx <= sb.x + sb.w && vy >= sb.y && vy <= sb.y + sb.h) {
+            global.Sfx.unlock();
+            if (sb.action === 'mute') match.meta('mute');
+            else if (sb.action === 'level') global.Sfx.setLevel(sb.level);
+            else if (sb.action === 'cuemute') match.meta('cuemute');
+            else if (sb.action === 'cuelevel') global.Sfx.setCueLevel(sb.level);
+            return;
+          }
+        }
+      }
+
       if (match.state === 'lobby' && match._lobbyHit) {
         for (var i = 0; i < match._lobbyHit.length; i++) {
           var b = match._lobbyHit[i];
