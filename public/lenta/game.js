@@ -9198,7 +9198,7 @@ function _f9CurrentTowerLevel() {
   for (const w of S._f9Walls) { if (w && w.tower) return Math.max(1, Math.round((w.maxHp || _F9_TOWER_BASE_HP) / _F9_TOWER_BASE_HP)); }
   return 1;
 }
-const _F9_MAX_TOWERS = 5, _F9_TOWER_MIN_GAP = 6;
+const _F9_MAX_TOWERS = 5, _F9_TOWER_MIN_GAP = 4;   // 09-16 user: su 6 telpdavo tik 4 bokštai iš 5
 function _f9TowerCount() {
   if (typeof S === 'undefined' || !S || !Array.isArray(S._f9Walls)) return 0;
   let n = 0; for (const w of S._f9Walls) { if (w && w.tower) n++; } return n;

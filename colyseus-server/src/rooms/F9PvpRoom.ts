@@ -125,7 +125,10 @@ const PVP_WALL_CELLS: { x: number; y: number; tower?: boolean }[] = (() => {
   return cells;
 })();
 const MAX_TOWERS = 5;                                      // 🗼 max bokštų pilyje
-const TOWER_MIN_GAP = 6;                                   // 🗼 min eilių tarpas tarp bokštų (anti-OP klasteris)
+/* 🗼 Min eilių tarpas tarp bokštų. 09-16 (user) 6 → 4: siena turi tik 12 statomų eilių
+ * (0, 5–9, 14–18, 23 — likusios yra praėjimai), tad su 6 tilpdavo TIK 4 bokštai iš 5.
+ * Su 4 telpa visi penki, pvz. 0 · 5 · 9 · 14 · 18. */
+const TOWER_MIN_GAP = 4;
 // 💧 GROVYS — 2 celių vandens juosta RYTINĖJ sienos pusėj (x=34,35), VISUR išskyrus VIDURĮ (laisvas praėjimas).
 // NEpraeinamas (vandens nesunaikinsi) → net pralaužus sieną, pereiti gali TIK pro vidurį. Vizualas klientui.
 const MOAT_X0 = WALL_COL + 1;                       // 34
