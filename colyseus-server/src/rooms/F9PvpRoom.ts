@@ -125,7 +125,7 @@ const PVP_WALL_CELLS: { x: number; y: number; tower?: boolean }[] = (() => {
   return cells;
 })();
 const MAX_TOWERS = 5;                                      // 🗼 max bokštų pilyje
-const TOWER_MIN_GAP = 6;                                   // 🗼 min eilių tarpas tarp bokštų (anti-OP klasteris)
+const TOWER_MIN_GAP = 4;                                   // 🗼 min eilių tarpas tarp bokštų (09-16 user: buvo 6)
 // 💧 GROVYS — 2 celių vandens juosta RYTINĖJ sienos pusėj (x=34,35), VISUR išskyrus VIDURĮ (laisvas praėjimas).
 // NEpraeinamas (vandens nesunaikinsi) → net pralaužus sieną, pereiti gali TIK pro vidurį. Vizualas klientui.
 const MOAT_X0 = WALL_COL + 1;                       // 34
@@ -180,7 +180,15 @@ const UPG_FREE = process.env.F9_UPG_FREE === "1";          // testams/dev — be
 const towerHpForLevel = (lvl: number) => TOWER_HP * Math.max(1, Math.min(TOWER_MAX_LVL, lvl));   // L1=70…L4=280
 const TOWER_DMG_BY_LVL: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5 };   // 🗼 07-18 user NERF: 12 buvo OP (5 bokštai=60/залп) → max 5
 const towerDmgForLevel = (lvl: number) => TOWER_DMG_BY_LVL[Math.max(1, Math.min(TOWER_MAX_LVL, lvl))] || 3; // L1=3, L2=4, L3=4, L4=5
-const TOWER_RANGE = 6.5;    // šaudymo nuotolis (cells)
+/* 🗼🎯 NUOTOLIS. 09-16 (user): bazinis nukirstas per 50% (6.5 → 3.25), o prarastą nuotolį galima
+ * ATSIPIRKTI kaulais — vienkartinis upgrade +30% (3.25 → 4.225) už 150🦴. Kaina, kaip ir kiti
+ * upgrade'ai, dalinama bokštams (žr. `spend`), tad nugriovus dalis jos grįžta per refundą. */
+const TOWER_RANGE = 3.25;   // bazinis šaudymo nuotolis (cells) — buvo 6.5
+const TOWER_RANGE_STEP = 0.05;        // kiekvienas upgrade +5%
+const TOWER_RANGE_MAX_LVL = 6;        // 6 × 5% = +30% (3.25 → 4.225)
+const TOWER_RANGE_UPG_COST = 150;     // 🦴 UŽ KIEKVIENĄ žingsnį (pilnas +30% = 900)
+const towerRangeLvlClamp = (lvl: number) => Math.max(0, Math.min(TOWER_RANGE_MAX_LVL, Math.round(Number(lvl) || 0)));
+const towerRangeForLevel = (lvl: number) => Math.round(TOWER_RANGE * (1 + TOWER_RANGE_STEP * towerRangeLvlClamp(lvl)) * 1000) / 1000;
 /* 🗼🐢 NERF 2026-08-22 (user): „3 kartai kas 10 sek" → 10000/3 ≈ 3333 ms tarp šūvių.
  * Buvo 2200 ms = 4,55 šūvio per 10 s vienam bokštui; dabar lygiai 3,0. Su 5 bokštais zalpas krenta
  * nuo ~22,7 iki 15 šūvių per 10 s. Cooldown per-celę, tad kiekvienas bokštas lėtėja vienodai. */
@@ -1347,6 +1355,7 @@ export class F9PvpRoom extends Room<F9State> {
     this.onMessage("build_tower", (client, msg: any) => this._handleBuildTower(client, msg));
     // 🗼💥 GRIOVIMAS + 50% kaulu grazinimas (tik savininkas, tik ramus home) — zr. _handleDemolishTower
     this.onMessage("demolish_tower", (client, msg: any) => this._handleDemolishTower(client, msg));
+    this.onMessage("upgrade_tower_range", (client) => this._handleUpgradeTowerRange(client));   // 🎯 +30% nuotolio už 150🦴
     // 🗼ℹ Klientui: bokstu skaicius/lygis/investicija + kiek atiduotu uz vieno nugriovima
     this.onMessage("tower_state_get", (client) => { try { client.send("tower_state", this._towerStatePayload()); } catch (_) {} });
     // ⚔️ DEPLOY (07-04): pasveikę/nespawninti deko unitai → garnizonas. Tik savininkas, tik ramybėje.
@@ -2544,6 +2553,7 @@ export class F9PvpRoom extends Room<F9State> {
     const demolish = opts && Number.isFinite(Number(opts.demolishedY));
     this._ensureTowerSpends();
     const wallLevel = this._buildings.wallLevel || 1, towerLevel = this._buildings.towerLevel || 1;
+    const towerRangeLevel = Number((this._buildings as any).towerRangeLevel) || 0;   // 🎯 nuotolio upgrade
     const towers = (this._buildings.towers || []).map((t) => ({ y: t.y, level: t.level, spend: this._towerSpendOf(t) }));
     const hospLevel = this._buildings.hospLevel || 1;
     const blessGenLevel = this._buildings.blessGenLevel || 0;   // ⚡🏭 pirktas už kaulus → tas pats monotoniškas kelias
@@ -2555,6 +2565,7 @@ export class F9PvpRoom extends Room<F9State> {
        * numatytieji (nepavykęs load'as), upgrade nebegali „nuridenti" pilies į 1 lygį. */
       b.wallLevel = Math.max(Number(b.wallLevel) || 1, wallLevel);
       b.towerLevel = Math.max(Number(b.towerLevel) || 1, towerLevel);
+      (b as any).towerRangeLevel = Math.max(Number((b as any).towerRangeLevel) || 0, towerRangeLevel);
       b.hospLevel = Math.max(Number(b.hospLevel) || 1, hospLevel);
       b.blessGenLevel = Math.max(Number(b.blessGenLevel) || 0, blessGenLevel);
       (b as any).mineCapLevel = Math.max(Number((b as any).mineCapLevel) || 0, mineCapLevel);
@@ -3384,6 +3395,31 @@ export class F9PvpRoom extends Room<F9State> {
     } finally { this._upgBusy = false; }
   }
 
+  /* 🗼🎯 NUOTOLIO UPGRADE (09-16 user): po +5% už žingsnį, iki +30% (6 žingsniai), kaina 150🦴 UŽ KIEKVIENĄ.
+   * Kaina dalinama bokštams į jų `spend` — kaip ir lygio upgrade'as, tad nugriovus dalis grįžta. */
+  private async _handleUpgradeTowerRange(client: Client) {
+    if (!this._home || client.sessionId !== this._ownerSid) return;
+    if (this.state.players.size > 1) return;
+    const cur = Number((this._buildings as any).towerRangeLevel) || 0;
+    if (cur >= TOWER_RANGE_MAX_LVL) { client.send("tower_range_upgraded", { level: cur, range: towerRangeForLevel(cur), max: true }); return; }
+    if (!(this._buildings.towers || []).length) { client.send("upgrade_fail", { reason: "notower", what: "Tower range" }); return; }
+    if (this._upgBusy) return; this._upgBusy = true;
+    try {
+      const next = cur + 1;
+      if (!(await this._spendBones(client, TOWER_RANGE_UPG_COST, "Tower range +" + Math.round(TOWER_RANGE_STEP * next * 100) + "%"))) return;
+      if (this.state.players.size > 1 || (Number((this._buildings as any).towerRangeLevel) || 0) >= next) return;   // re-check po await
+      (this._buildings as any).towerRangeLevel = next;
+      const _rTowers = this._ensureTowerSpends();
+      if (_rTowers.length) {
+        const _per = TOWER_RANGE_UPG_COST / _rTowers.length;
+        for (const t of _rTowers) (t as any).spend = Math.round((this._towerSpendOf(t) + _per) * 10) / 10;
+      }
+      this.broadcast("tower_range_upgraded", { ...this._towerStatePayload(), level: next, range: towerRangeForLevel(next) });
+      this._persistStructures(this._ownerAddr);
+      console.log(`[F9PvpRoom] 🗼🎯 tower range → L${next} (${towerRangeForLevel(next)} cells, -${TOWER_RANGE_UPG_COST}🦴, persisted)`);
+    } finally { this._upgBusy = false; }
+  }
+
   // 🗼 STATYTI bokštą ant sienos eilės y. Validacija: savininkas + ramus home + <MAX + min 6 eilių tarpas +
   //    gyvas sienos segmentas + dar nėra bokšto ten. (NFT backing = vėliau; kol kas 5 slotai.)
   private async _handleBuildTower(client: Client, msg: any) {
@@ -3425,6 +3461,10 @@ export class F9PvpRoom extends Room<F9State> {
     const towers = this._ensureTowerSpends();
     return {
       count: towers.length, level: this._buildings.towerLevel || 1,
+      rangeLevel: Number((this._buildings as any).towerRangeLevel) || 0,
+      range: Math.round(towerRangeForLevel((this._buildings as any).towerRangeLevel || 0) * 100) / 100,
+      rangeMaxLevel: TOWER_RANGE_MAX_LVL, rangeCost: TOWER_RANGE_UPG_COST,
+      rangeStepPct: Math.round(TOWER_RANGE_STEP * 100), rangeBase: TOWER_RANGE,
       spend: Math.round(towers.reduce((s, t) => s + this._towerSpendOf(t), 0) * 10) / 10,
       towers: towers.map((t) => ({ y: t.y, refund: this._towerRefundFor(this._towerSpendOf(t)) })),
     };
@@ -4560,7 +4600,7 @@ export class F9PvpRoom extends Room<F9State> {
       const key = t.x + "," + t.y;
       if ((this._towerCd[key] || 0) > this._simTime) continue;
       const tx = t.x, ty = t.y;   // bokšto centras u-space = (t.x, t.y)
-      let best: F9Unit | null = null, bestD = TOWER_RANGE;
+      let best: F9Unit | null = null, bestD = towerRangeForLevel((this._buildings as any).towerRangeLevel || 0);
       this.state.units.forEach((u) => {
         if (!u.alive || u.team === DEFENDER_TEAM) return;   // gina pilį → šauna tik attackerius
         const d = Math.hypot(u.x - tx, u.y - ty);

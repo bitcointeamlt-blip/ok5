@@ -1339,6 +1339,14 @@
       window._f9TowerState = { count: e.count | 0, level: e.level | 0, spend: Number(e.spend) || 0, towers: Array.isArray(e.towers) ? e.towers.map(function (t) { return { y: t.y | 0, refund: t.refund | 0 }; }) : [], at: Date.now() };
     }
     room.onMessage('tower_state', _towerState);
+    // 🗼🎯 NUOTOLIS PADIDINTAS — feedback + panelė iškart rodo naują reikšmę.
+    room.onMessage('tower_range_upgraded', function (e) {
+      _towerState(e);
+      var pct = e ? Math.round(((e.range || 0) / 3.25 - 1) * 100) : 0;
+      if (e && e.max) { _status('🎯 Tower range already MAX (+' + pct + '%)', '#fc8'); return; }
+      _status('🎯 Tower range +' + pct + '% (' + (e ? e.range : '') + ')', '#ffcf5c');
+      try { if (window.showGameNotification) window.showGameNotification('CASTLE', 'Zip Tower range upgraded to +' + pct + '%', '#ffcf5c'); } catch (_) {}
+    });
     // 🗼💥 BOKŠTAS NUGRIAUTAS — kaulai jau banke (serveris atsiuntė naują balansą).
     room.onMessage('tower_demolished', function (e) {
       _towerState(e);
@@ -2521,6 +2529,11 @@
     var room = (window.F9PVP && window.F9PVP.room) ? window.F9PVP.room : null;
     if (room && typeof room.send === 'function') { try { room.send('demolish_tower', { y: y }); } catch (_) {} }
   }
+  // 🗼🎯 Nuotolio upgrade (+5% už 150 🦴, iki +30%) — serveris nurašo kaulus ir validuoja.
+  function upgradeTowerRange() {
+    var room = (window.F9PVP && window.F9PVP.room) ? window.F9PVP.room : null;
+    if (room && typeof room.send === 'function') { try { room.send('upgrade_tower_range'); } catch (_) {} }
+  }
   // 🗼ℹ️ Paprašom bokštų būklės (kiekis/lygis/investicija//kiek atiduotų už nugriovimą) — atsakymas 'tower_state'.
   function towerStateGet() {
     var room = (window.F9PVP && window.F9PVP.room) ? window.F9PVP.room : null;
@@ -2810,7 +2823,7 @@
   }
 
   window.F9PvpLive = {
-    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, upgradeMineCap: upgradeMineCap, upgradeRaidGuard: upgradeRaidGuard, removeShield: removeShield, buildTower: buildTower, demolishTower: demolishTower, towerStateGet: towerStateGet, stop: stop,
+    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, upgradeMineCap: upgradeMineCap, upgradeRaidGuard: upgradeRaidGuard, removeShield: removeShield, buildTower: buildTower, demolishTower: demolishTower, towerStateGet: towerStateGet, upgradeTowerRange: upgradeTowerRange, stop: stop,
     isActive: active,
     netTick: netTick,
     sendCommand: sendCommand,
