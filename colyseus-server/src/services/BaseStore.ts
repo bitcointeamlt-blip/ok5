@@ -73,7 +73,7 @@ export type InjuredUnit = { tokenId: string; utype: string; level: number; until
 // 🏗️ Pastatų konfigūracija (upgrade sistema): sienos lygis + pastatyti bokštai.
 //    + 🏥 injured (eilė) + hospStart — ligoninė laikoma ČIA (buildings jsonb — atskiros DB kolonos NEreikia,
 //    nes Supabase mgmt token miręs → DDL negalimas; service-role upsert veikia).
-export type BaseBuildings = { raidCd?: Record<string, number>; wallLevel: number; towerLevel?: number; towers: { y: number; level: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; blessGenLevel?: number; mineCapLevel?: number; raidGuardLevel?: number; deadUnits?: string[];
+export type BaseBuildings = { raidCd?: Record<string, number>; wallLevel: number; towerLevel?: number; towers: { y: number; level: number; spend?: number }[]; injured?: InjuredUnit[]; hospStart?: number; hospStarts?: number[]; hospDurs?: number[]; hospLevel?: number; blessGenLevel?: number; mineCapLevel?: number; raidGuardLevel?: number; deadUnits?: string[];
   cemPot?: number; cemTick?: number; cemPower?: number; cemNft?: number; cemRv?: number; cemWallet?: number; cemRamp?: number;   // ⚰️ kapinės (pot=nesurinkti; rv=RonkeVerse NFT, wallet=Barracks unitų piniginėj — full-player gating)
   minePot?: number;   // ⛏️💰 iškastas RONKE (server-authoritative mining pot; tick=cemTick bendras) — DUTY: raiders vagia 50%
   mineCheckpoint?: number;  // ⛏️🗡 (legacy) senas „siege checkpoint" lygis — vartuose nebedalyvauja, laikom senų klientų suderinamumui
@@ -132,12 +132,15 @@ export async function loadBaseBuildings(address: string): Promise<BaseBuildings 
     const hospStarts: number[] = Array.isArray(b.hospStarts) ? b.hospStarts.filter((x: any) => Number.isFinite(+x)).map((x: any) => +x) : [];
     const hospDurs: number[] = Array.isArray(b.hospDurs) ? b.hospDurs.filter((x: any) => Number.isFinite(+x)).map((x: any) => +x) : [];
     const deadUnits: string[] = Array.isArray(b.deadUnits) ? b.deadUnits.filter((x: any) => x != null).map((x: any) => String(x)) : [];
-    const towers: { y: number; level: number }[] = [];
+    const towers: { y: number; level: number; spend?: number }[] = [];
     if (Array.isArray(b.towers)) {
       for (const t of b.towers) {
         if (!t || typeof t !== "object") continue;
         if (!Number.isFinite(+t.y)) continue;
-        towers.push({ y: Math.round(+t.y), level: Number.isFinite(+t.level) ? Math.max(1, Math.min(5, Math.round(+t.level))) : 1 });
+        /* 🗼🦴 `spend` = į ŠĮ bokštą realiai sudėti kaulai (statyba + jam tekusi upgrade'ų dalis).
+         * Iš jo skaičiuojam 50% grąžą nugriovus. Nėra lauko (sena pilis) → kambarys užpildo iš formulės. */
+        const _sp = Number.isFinite(+t.spend) ? Math.max(0, Math.round(+t.spend * 10) / 10) : undefined;
+        towers.push({ y: Math.round(+t.y), level: Number.isFinite(+t.level) ? Math.max(1, Math.min(5, Math.round(+t.level))) : 1, ...(_sp === undefined ? {} : { spend: _sp }) });
       }
     }
     // 🏥 ligoninės EILĖ — sanitizuojam (tvarka = eilės tvarka; pasveikimą sprendžia room pagal hospStart)

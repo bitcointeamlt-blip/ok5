@@ -157,6 +157,34 @@ export async function bakDump(addr: string): Promise<{ hi: StructHigh | null; sn
   try { const r = await _read(_norm(addr)); return { hi: r.hi, snaps: r.snaps }; } catch (_) { return null; }
 }
 
+/* 🗼💥 SĄMONINGAS NUGRIOVIMAS: pašalina bokštą iš aukščiausio taško, kad `healStructures` jo NEATSTATYTŲ.
+ * Be šito nugriautas (ir jau atpirktas kaulais) bokštas grįžtų per savigydą — begalinis kaulų šaltinis.
+ * Kviečiama TIK iš demolish kelio, po to, kai naujas (mažesnis) sąrašas jau išsaugotas. */
+export async function bakDropTower(addr: string, y: number): Promise<boolean> {
+  const a = _norm(addr);
+  if (!a || !sb() || !Number.isFinite(+y)) return false;
+  const yy = Math.round(+y);
+  for (let i = 0; i < CAS_RETRIES; i++) {
+    try {
+      const row = await _read(a);
+      if (!row.hi) return true;   // kopijos dar nėra → savigyda nieko neatstatys
+      const before = row.hi.tow.length;
+      row.hi = { ...row.hi, tow: row.hi.tow.filter((t) => t.y !== yy), at: Date.now() };
+      if (row.hi.tow.length === before) return true;   // tokio bokšto kopijoj nebuvo
+      // Snapshot'ai irgi turi pamiršti bokštą — kitaip rankinis atstatymas jį grąžintų kaip „prarastą".
+      row.snaps = row.snaps.map((s) => {
+        const tow = Array.isArray(s?.b?.towers) ? s.b.towers.filter((t: any) => Math.round(Number(t?.y)) !== yy) : s?.b?.towers;
+        return tow ? { ...s, b: { ...s.b, towers: tow } } : s;
+      });
+      if (await _write(a, row)) {
+        console.log(`[BaseBackup] 🗼💥 ${a.slice(0, 10)}… bokštas y${yy} pašalintas iš kopijos (nugriautas savo noru)`);
+        return true;
+      }
+    } catch (_) { return false; }
+  }
+  return false;
+}
+
 /* 🛠 OPS: rankinis aukščiausio taško nustatymas (kai žaidėjas prarado progresą DAR neturėdamas kopijos).
  * Po jo pirmas prisijungimas savaime atstatys pilį per healStructures. */
 export async function bakSetHigh(addr: string, s: Partial<StructHigh>): Promise<StructHigh | null> {

@@ -2,7 +2,7 @@ import { Room, Client } from "@colyseus/core";
 import { F9State, F9Player, F9Unit, F9Wall } from "../schema/F9State";
 import { StakeService, Payout, DeathSettle } from "../services/StakeService";
 import { permadeathChance, LOCK_DURATION_MS } from "../util/stakes";
-import { bakRecord, healStructures } from "../services/BaseBackup";
+import { bakRecord, bakDropTower, healStructures } from "../services/BaseBackup";
 import { burnAuthAdd, burnAuthCount, burnAuthUncovered, BURN_AUTH_TARGET, BURN_AUTH_DAYS } from "../services/F9BurnAuth";   // 🔥📜 iš anksto pasirašytos burn autorizacijos
 import { burnDeadUnits, burnEnabled } from "../services/F9Burn";                                          // 🔥 NFT deginimas mirties momentu
 import { deadAdd, deadAll, deadEnsure, deadFlushPending } from "../services/DeadRegistry";                // 💀🌍 miręs tokenas miręs VISIEMS (ne tik savininkui)
@@ -168,6 +168,14 @@ const TOWER_MAX_LVL = 4;                                   // 🗼 bokšto upgra
 const WALL_UPG_COST: Record<number, number> = { 2: 25, 3: 50, 4: 100 };
 const TOWER_BUILD_COST = 40;
 const TOWER_UPG_COST: Record<number, number> = { 2: 30, 3: 60, 4: 120 };   // upgrade'ina VISUS bokštus iškart
+const TOWER_REFUND_PCT = 0.5;   // 🗼💥 nugriovus grąžinam 50% TO BOKŠTO investicijos dalies (žemyn apvalinant)
+/* Kiek kaulų iš viso sumokėta už upgrade'us iki lygio `lvl` (L1=0, L2=30, L3=90, L4=210).
+ * Upgrade mokamas VIENĄ kartą visiems bokštams, todėl vienam bokštui tenka tik jo DALIS (spend/N). */
+const towerUpgCum = (lvl: number) => {
+  let s = 0;
+  for (let l = 2; l <= Math.max(1, Math.min(TOWER_MAX_LVL, Math.round(lvl))); l++) s += TOWER_UPG_COST[l] || 0;
+  return s;
+};
 const UPG_FREE = process.env.F9_UPG_FREE === "1";          // testams/dev — be kainos
 const towerHpForLevel = (lvl: number) => TOWER_HP * Math.max(1, Math.min(TOWER_MAX_LVL, lvl));   // L1=70…L4=280
 const TOWER_DMG_BY_LVL: Record<number, number> = { 1: 3, 2: 4, 3: 4, 4: 5 };   // 🗼 07-18 user NERF: 12 buvo OP (5 bokštai=60/залп) → max 5
@@ -1337,6 +1345,10 @@ export class F9PvpRoom extends Room<F9State> {
     });
     this.onMessage("upgrade_towers", (client) => this._handleUpgradeTowers(client));
     this.onMessage("build_tower", (client, msg: any) => this._handleBuildTower(client, msg));
+    // 🗼💥 GRIOVIMAS + 50% kaulu grazinimas (tik savininkas, tik ramus home) — zr. _handleDemolishTower
+    this.onMessage("demolish_tower", (client, msg: any) => this._handleDemolishTower(client, msg));
+    // 🗼ℹ Klientui: bokstu skaicius/lygis/investicija + kiek atiduotu uz vieno nugriovima
+    this.onMessage("tower_state_get", (client) => { try { client.send("tower_state", this._towerStatePayload()); } catch (_) {} });
     // ⚔️ DEPLOY (07-04): pasveikę/nespawninti deko unitai → garnizonas. Tik savininkas, tik ramybėje.
     this.onMessage("deploy_ready", (client) => {
       if (!this._home || client.sessionId !== this._ownerSid) return;
@@ -2526,11 +2538,13 @@ export class F9PvpRoom extends Room<F9State> {
     } catch (_) {}
   }
   // 🏗️ Persist sienos/bokštų lygius (per _buildingsOp eilę — neclobberina injured/cem laukų). Fire-and-forget.
-  private _persistStructures(addr: string) {
+  private _persistStructures(addr: string, opts?: { demolishedY?: number }) {
     addr = (addr || "").trim().toLowerCase();
     if (!addr) return;
+    const demolish = opts && Number.isFinite(Number(opts.demolishedY));
+    this._ensureTowerSpends();
     const wallLevel = this._buildings.wallLevel || 1, towerLevel = this._buildings.towerLevel || 1;
-    const towers = (this._buildings.towers || []).map((t) => ({ y: t.y, level: t.level }));
+    const towers = (this._buildings.towers || []).map((t) => ({ y: t.y, level: t.level, spend: this._towerSpendOf(t) }));
     const hospLevel = this._buildings.hospLevel || 1;
     const blessGenLevel = this._buildings.blessGenLevel || 0;   // ⚡🏭 pirktas už kaulus → tas pats monotoniškas kelias
     const mineCapLevel = (this._buildings as any).mineCapLevel || 0;     // ⛏️🦴 SAFE ciklo luba (200 +25/lygis)
@@ -2545,10 +2559,34 @@ export class F9PvpRoom extends Room<F9State> {
       b.blessGenLevel = Math.max(Number(b.blessGenLevel) || 0, blessGenLevel);
       (b as any).mineCapLevel = Math.max(Number((b as any).mineCapLevel) || 0, mineCapLevel);
       (b as any).raidGuardLevel = Math.max(Number((b as any).raidGuardLevel) || 0, raidGuardLevel);
-      if (towers.length >= ((b.towers || []).length)) b.towers = towers;   // bokštų tik daugėja
-      void bakRecord(addr, b);   // 🏰💾 kas nupirkta už kaulus — iškart į atsarginę kopiją
+      /* 🗼💥 Vienintelė išimtis monotoniškumui — SĄMONINGAS nugriovimas (žaidėjas gavo kaulų atgal).
+       * Tada rašom trumpesnį sąrašą ir mažesnį `towerSpend`; kopiją tvarko `bakDropTower` po šito. */
+      if (demolish || towers.length >= ((b.towers || []).length)) b.towers = towers;   // kitaip bokštų tik daugėja
+      if (!demolish) void bakRecord(addr, b);   // 🏰💾 kas nupirkta už kaulus — iškart į atsarginę kopiją
     });
   }
+  /* 🗼💥 NUGRIOVIMAS: išsaugom sutrumpintą sąrašą IR pašalinam bokštą iš atsarginės kopijos.
+   * Tvarka svarbi: pirma persist (be bakRecord), tada bakDropTower — kitaip savigyda bokštą prikeltų. */
+  private async _persistTowerDemolish(addr: string, y: number) {
+    this._persistStructures(addr, { demolishedY: y });
+    try { await bakDropTower(addr, y); } catch (_) {}
+  }
+  /* 🗼🦴 Kiek kaulų sudėta į KIEKVIENĄ bokštą atskirai (statyba + jam tekusi upgrade'ų dalis).
+   * PER-BOKŠTĄ, ne bendras katilas: bendras katilas + dalyba iš N leidžia „churn" exploit'ą — pasistatai
+   * pigų bokštą, nugriauni ir atgauni dalį SENŲ bokštų upgrade'ų (testas rado: 120🦴 išleista → 151🦴 atgal).
+   * Sena pilis (lauko dar nėra) atkuriama iš formulės: viso 40×N + upgrade suma, padalinta po lygiai. */
+  private _ensureTowerSpends(): { y: number; level: number; spend?: number }[] {
+    const towers = this._buildings.towers || (this._buildings.towers = []);
+    const missing = towers.filter((t) => !Number.isFinite(Number((t as any).spend)));
+    if (missing.length) {
+      const total = TOWER_BUILD_COST * towers.length + towerUpgCum(this._buildings.towerLevel || 1);
+      const known = towers.reduce((s, t) => s + (Number.isFinite(Number((t as any).spend)) ? Number((t as any).spend) : 0), 0);
+      const each = Math.max(TOWER_BUILD_COST, Math.round(((total - known) / missing.length) * 10) / 10);
+      for (const t of missing) (t as any).spend = each;
+    }
+    return towers;
+  }
+  private _towerSpendOf(t: any): number { return Math.max(0, Number(t?.spend) || 0); }
   // 🦴 Upgrade kaina iš žaidėjo BANKO (f9_bases <addr>#bones). false = neužteko/klaida → klientui 'upgrade_fail'.
   private _upgBusy = false;   // anti double-spend guard (du klik'ai kol laukiam banko)
   private async _spendBones(client: Client, cost: number, what: string): Promise<boolean> {
@@ -3328,13 +3366,19 @@ export class F9PvpRoom extends Room<F9State> {
       if (this.state.players.size > 1 || (this._buildings.towerLevel || 1) >= next) return;   // re-check po await
       this._buildings.towerLevel = next;
       const lvl = this._buildings.towerLevel;
+      // 🗼🦴 Upgrade mokamas VIENĄ kartą už visus bokštus → kaina dalinama jiems po lygiai (refundo bazė).
+      const _upgTowers = this._ensureTowerSpends();
+      if (_upgTowers.length) {
+        const _perTower = (TOWER_UPG_COST[next] || 0) / _upgTowers.length;
+        for (const t of _upgTowers) (t as any).spend = Math.round((this._towerSpendOf(t) + _perTower) * 10) / 10;
+      }
       for (const t of (this._buildings.towers || [])) t.level = lvl;
       this.state.walls.forEach((w) => {
         if (!w.tower) return;
         w.maxHp = towerHpForLevel(lvl);
         w.hp = w.maxHp;
       });
-      this.broadcast("towers_upgraded", { level: lvl });
+      this.broadcast("towers_upgraded", { ...this._towerStatePayload(), level: lvl });
       this._persistStructures(this._ownerAddr);
       console.log(`[F9PvpRoom] 🗼 towers upgraded → Lv${lvl} (-${TOWER_UPG_COST[lvl] || 0}🦴, persisted)`);
     } finally { this._upgBusy = false; }
@@ -3360,13 +3404,65 @@ export class F9PvpRoom extends Room<F9State> {
       if (!(await this._spendBones(client, TOWER_BUILD_COST, "Zip Tower"))) return;
       const seg2 = this.state.walls.get(WALL_COL + "," + y);
       if (!seg2 || !seg2.alive || seg2.tower || towers.length >= MAX_TOWERS) return;
-      towers.push({ y, level: this._buildings.towerLevel || 1 });
+      this._ensureTowerSpends();                     // backfill PRIEŠ push (naujas bokštas turi SAVO kainą)
+      towers.push({ y, level: this._buildings.towerLevel || 1, spend: TOWER_BUILD_COST });
       seg2.tower = true;
       seg2.maxHp = towerHpForLevel(this._buildings.towerLevel || 1);
       seg2.hp = seg2.maxHp;
-      this.broadcast("tower_built", { y, count: towers.length });
+      this.broadcast("tower_built", { ...this._towerStatePayload(), y, count: towers.length });
       this._persistStructures(this._ownerAddr);
       console.log(`[F9PvpRoom] 🗼 tower built @y${y} (${towers.length}/${MAX_TOWERS}, -${TOWER_BUILD_COST}🦴, persisted)`);
+    } finally { this._upgBusy = false; }
+  }
+
+  /* 🗼💥 GRIOVIMAS + 50% GRĄŽINIMAS (user 2026-09-16: „susigrąžinti 50% kaulų, kiek kainavo, kad galėtų
+   *   perstatyti"; „ne tik statyba, bet ir visi upgrade'ai").
+   * Kadangi upgrade mokamas VIENĄ kartą visiems bokštams, vienam bokštui tenka `towerSpend / N` — tik tą
+   * dalį ir perkam atgal (50%), o `towerSpend` sumažinam ta pačia dalimi. Todėl bendra grąža NIEKADA
+   * neviršija pusės realiai išleistų kaulų, kad ir kiek kartų statytum/griautum (be šito 5 bokštai L4
+   * grąžintų 625🦴 už 410🦴 išleistų = kaulų spausdinimas). */
+  private _towerStatePayload() {
+    const towers = this._ensureTowerSpends();
+    return {
+      count: towers.length, level: this._buildings.towerLevel || 1,
+      spend: Math.round(towers.reduce((s, t) => s + this._towerSpendOf(t), 0) * 10) / 10,
+      towers: towers.map((t) => ({ y: t.y, refund: this._towerRefundFor(this._towerSpendOf(t)) })),
+    };
+  }
+  private _towerRefundFor(spend: number): number {
+    if (UPG_FREE) return 0;   // dev režimas nemoka → ir negrąžina (kitaip mintintų kaulus)
+    return Math.max(0, Math.floor(spend * TOWER_REFUND_PCT));
+  }
+  private async _handleDemolishTower(client: Client, msg: any) {
+    if (!this._home || client.sessionId !== this._ownerSid) return;
+    if (this.state.players.size > 1) { client.send("tower_demolish_fail", { reason: "busy" }); return; }   // ne mūšio metu
+    const y = Math.round(Number(msg?.y));
+    const towers = this._buildings.towers || (this._buildings.towers = []);
+    const idx = towers.findIndex((t) => Math.round(Number(t.y)) === y);
+    const seg = this.state.walls.get(WALL_COL + "," + y);
+    if (!Number.isFinite(y) || idx < 0 || !seg || !seg.tower) { client.send("tower_demolish_fail", { reason: "notower" }); return; }
+    if (this._upgBusy) return; this._upgBusy = true;
+    try {
+      this._ensureTowerSpends();
+      const spend = this._towerSpendOf(towers[idx]);
+      const refund = this._towerRefundFor(spend);
+      // 1) PIRMA nuimam bokštą ir išsaugom — jei kreditas nepavyktų, žaidėjas praranda grąžą, bet
+      //    niekada negauna kaulų už tebestovintį bokštą (atvirkštinė tvarka būtų kaulų spausdinimas).
+      towers.splice(idx, 1);   // su juo dingsta ir jo `spend` → antrą kartą to paties atgauti nebegalima
+      seg.tower = false;
+      seg.maxHp = wallHpForLevel(seg.level || this._buildings.wallLevel || 1);
+      seg.hp = Math.min(seg.hp, seg.maxHp);
+      await this._persistTowerDemolish(this._ownerAddr, y);
+      // 2) Tik dabar kreditas į banką (addBones jau sukasi boneBankOp eilėj — savo read-modify-write NEdarom)
+      const p = this.state.players.get(client.sessionId);
+      const addr = String(p?.address || "").trim().toLowerCase();
+      let bank: number | null = null;
+      if (refund > 0 && addr) {
+        bank = await addBones(addr, refund);
+        if (bank === null) console.warn(`[F9PvpRoom] 🗼💥 refund ${refund}🦴 NEUŽSKAITYTAS (bankas neišsaugotas) ${addr.slice(0, 10)}…`);
+      }
+      this.broadcast("tower_demolished", { ...this._towerStatePayload(), y, refund: bank === null ? 0 : refund, bank });
+      console.log(`[F9PvpRoom] 🗼💥 tower demolished @y${y} (+${refund}🦴 iš ${spend}🦴 investicijos, liko ${towers.length} bokštų)`);
     } finally { this._upgBusy = false; }
   }
 

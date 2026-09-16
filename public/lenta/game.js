@@ -4443,6 +4443,10 @@ function _f9InstallDragHandlers() {
         else { _f9ExitTowerPlaceMode(); }   // klikas šalia sienos → atšaukiam
         return;
       }
+      // 🗼💥 Klikas ant PASTATYTO bokšto → patvirtinimas ir 50% kaulų atgal (user 09-16). Paprasta siena
+      //    lieka neinteraktyvi (upgrade — tik per pilies panelę), tad swallow'inam tik bokštą.
+      const _dseg = _f9WallAt(_wmx / CELL - 0.5, _wmy / CELL - 0.5);
+      if (_dseg && _dseg.tower) { _f9TowerDemolishModal(_dseg.y); return; }
     }
     // 🏰 click ant pilies → pasižymėjimas (toggle), swallow (be unit komandos). Kitur — nuimam pasižymėjimą.
     if (window._f9CastleRect) {
@@ -13673,6 +13677,12 @@ function _f9RenderCastlePanelBody() {
         html += '<button class="f9cp-up' + (uOk ? '' : ' max') + '" id="f9cp-towup"' + (uOk ? '' : ' disabled') + '>' +
           (uOk ? ('⬆ UPGRADE L' + (tl + 1) + ' — <span class="f9cp-bcost">' + uCost + ' 🦴</span>') : ('🔒 NEED <span class="f9cp-bcost">' + uCost + ' 🦴</span>')) + '</button>';
       } else if (tcount > 0 && tIsMax) html += '<button class="f9cp-up max">TOWERS MAX</button>';
+      // 🗼💥 Griovimas — klikas ant paties bokšto lauke (patvirtinimas + 50% investicijos atgal).
+      if (tcount > 0) {
+        const _ri = (typeof _f9TowerRefundInfo === 'function') ? _f9TowerRefundInfo() : { refund: 0, exact: false };
+        const _rTxt = (_ri.exact ? '' : '~') + _ri.refund + ((_ri.hi != null && _ri.hi !== _ri.refund) ? ('–' + _ri.hi) : '');
+        html += '<div class="f9cp-cost" style="color:#ffb3b0;">💥 CLICK A TOWER ON THE WALL TO DEMOLISH — GET BACK <b>' + _rTxt + ' 🦴</b></div>';
+      }
       html += '<div class="f9cp-cost">🦴 • MAX ' + tMax + ' • MIN ' + _F9_TOWER_MIN_GAP + ' APART</div></div>';
       return html;
     })() +
@@ -13760,6 +13770,8 @@ function _f9RenderCastlePanelBody() {
 let _f9CastlePanelTimer = null;
 function _f9ShowCastlePanel() {
   const p = _f9CastlePanelEl(); p.style.display = '';
+  // 🗼 Iš serverio — kiek į bokštus investuota (tikslus griovimo refundas; be jo rodom įvertį su „~").
+  try { if (window.F9PvpLive && typeof window.F9PvpLive.towerStateGet === 'function') window.F9PvpLive.towerStateGet(); } catch (_) {}
   _f9RenderCastlePanelBody();
   if (_f9CastlePanelTimer) clearInterval(_f9CastlePanelTimer);
   _f9CastlePanelTimer = setInterval(_f9RenderCastlePanelBody, 350);   // LIVE — lygis atsinaujina po upgrade
@@ -13794,6 +13806,58 @@ function _f9ExitTowerPlaceMode() {
   var b = document.getElementById('f9-towerplace-hint'); if (b) b.style.display = 'none';
 }
 window._f9ExitTowerPlaceMode = _f9ExitTowerPlaceMode;
+
+/* 🗼💥 GRIOVIMAS: kiek kaulų atgal už VIENĄ bokštą. Tiesa = serveris (`tower_state`), čia tik rodymas.
+ * Upgrade'ai mokami VIENĄ kartą visiems bokštams, tad vienam tenka investicijos DALIS (spend / count).
+ * Neturint serverio duomenų — įvertis iš tų pačių kainų (40×N + upgrade suma), pažymimas „~". */
+function _f9TowerRefundInfo(y) {
+  const st = window._f9TowerState;
+  const count = _f9TowerCount();
+  if (st && st.count === count && Array.isArray(st.towers) && st.towers.length) {
+    if (y != null) {
+      const t = st.towers.find(function (e) { return e && e.y === y; });
+      if (t) return { refund: t.refund | 0, exact: true, count: count };
+    } else {
+      // Panelės užuomina: bokštai gali skirtis (senesni turi upgrade'ų dalį) → rodom rėžį.
+      const vals = st.towers.map(function (e) { return e.refund | 0; });
+      const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+      return { refund: lo, hi: hi, exact: true, count: count };
+    }
+  }
+  const lvl = _f9CurrentTowerLevel();
+  let upg = 0; for (let l = 2; l <= lvl; l++) upg += _F9_UPG_COST.tower[l] || 0;
+  const spend = _F9_UPG_COST.towerBuild * count + upg;
+  return { refund: count > 0 ? Math.floor(spend / count / 2) : 0, exact: false, count: count };
+}
+// Patvirtinimas prieš griaunant (klaidingas klikas kainuotų pusę investicijos).
+function _f9TowerDemolishModal(y) {
+  try { var _old = document.getElementById('f9-tower-demolish'); if (_old) _old.remove(); } catch (_) {}
+  const info = _f9TowerRefundInfo(y);
+  const accent = '#ffcf5c';
+  const refundTxt = (info.exact ? '' : '~') + info.refund;
+  const ov = document.createElement('div');
+  ov.id = 'f9-tower-demolish';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100060;display:flex;align-items:center;justify-content:center;background:rgba(8,12,22,0.9);backdrop-filter:blur(5px);font-family:\'Press Start 2P\',monospace,sans-serif;';
+  ov.innerHTML = '<div style="background:linear-gradient(180deg,#1f2940,#0c1020);border:3px solid ' + accent + ';border-radius:12px;padding:24px 26px;width:430px;max-width:92vw;text-align:center;box-shadow:0 0 44px rgba(0,0,0,0.5);">' +
+    '<div style="font-size:15px;color:' + accent + ';letter-spacing:1px;margin-bottom:16px;">🗼 Demolish this Zip Tower?</div>' +
+    '<div style="font-size:11px;color:#c9d4e8;line-height:1.9;margin-bottom:20px;text-align:left;">' +
+      '🦴 You get back <b style="color:' + accent + ';">+' + refundTxt + ' bones</b> — half of what this tower cost you, upgrades included.<br>' +
+      '🔨 The spot frees up, so you can build a tower somewhere else for <b>' + _F9_UPG_COST.towerBuild + ' 🦴</b>.<br>' +
+      '<span style="color:#8a9aaa;">Upgrades stay on your other towers — only this tower\'s share is paid back.</span>' +
+    '</div>' +
+    '<div style="display:flex;gap:10px;">' +
+      '<button id="f9tdem-go" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #e85d5d;background:#e85d5d;color:#1a0a0a;cursor:pointer;">💥 DEMOLISH</button>' +
+      '<button id="f9tdem-cancel" style="flex:1;font-family:inherit;font-size:11px;padding:13px;border-radius:8px;border:2px solid #3a3a55;background:rgba(255,255,255,0.04);color:#8a9aaa;cursor:pointer;">CANCEL</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+  const close = function () { try { ov.remove(); } catch (_) {} };
+  ov.addEventListener('click', function (ev) { if (ev.target === ov) close(); });
+  ov.querySelector('#f9tdem-cancel').onclick = close;
+  ov.querySelector('#f9tdem-go').onclick = function () {
+    close();
+    if (window.F9PvpLive && typeof window.F9PvpLive.demolishTower === 'function') window.F9PvpLive.demolishTower(y);
+  };
+}
 // Build-spot peržiūra ant sienos (place mode): žalias ghost = galima, raudonas = per arti/užimta.
 function _f9DrawTowerPlacePreview() {
   if (!window._f9TowerPlaceMode || typeof S === 'undefined' || !S || S.floor !== 9 || !Array.isArray(S._f9Walls)) return;
