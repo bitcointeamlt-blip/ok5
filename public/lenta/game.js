@@ -9198,7 +9198,7 @@ function _f9CurrentTowerLevel() {
   for (const w of S._f9Walls) { if (w && w.tower) return Math.max(1, Math.round((w.maxHp || _F9_TOWER_BASE_HP) / _F9_TOWER_BASE_HP)); }
   return 1;
 }
-const _F9_MAX_TOWERS = 5, _F9_TOWER_MIN_GAP = 4;   // 09-16 user: tarpas tarp bokštų 6 → 4 slotai
+const _F9_MAX_TOWERS = 5, _F9_TOWER_MIN_GAP = 6;
 function _f9TowerCount() {
   if (typeof S === 'undefined' || !S || !Array.isArray(S._f9Walls)) return 0;
   let n = 0; for (const w of S._f9Walls) { if (w && w.tower) n++; } return n;
@@ -13622,9 +13622,7 @@ function _f9ZipThumb() {
 //    Display only — tikrą mokėjimą enforce'ina serveris iš banko. Keisk ABIEJOSE pusėse sinchroniškai!
 /* ⚡ bless: BLESS GENERATOR — antra HOSPITAL kortelės dalis (08-22 user). Raktas = PASIEKIAMAS lygis,
    kaip ir kitur. Turi sutapti su serverio BLESS_GEN_COST (F9PvpRoom.ts) — serveris yra tiesos šaltinis. */
-// 🎯 nuotolis: bazė nukirsta per pusę, atperkama po +5% (6 žingsniai iki +30%), 150 🦴 už žingsnį.
-const _F9_TOWER_BASE_RANGE = 3.25, _F9_TOWER_RANGE_STEP = 5, _F9_TOWER_RANGE_MAX_LVL = 6;
-const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, towerRange: 150, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 }, bless: { 1: 250, 2: 260, 3: 270, 4: 280, 5: 290 } };
+const _F9_UPG_COST = { wall: { 2: 25, 3: 50, 4: 100 }, towerBuild: 40, tower: { 2: 30, 3: 60, 4: 120 }, hosp: { 2: 100, 3: 40, 4: 40, 5: 150 }, bless: { 1: 250, 2: 260, 3: 270, 4: 280, 5: 290 } };
 // 🏗️ Pilies panelės KŪNAS — upgrade kortelės (siena dabar; bokštai = STEP2). Skaito lygį LIVE iš S._f9Walls.
 function _f9RenderCastlePanelBody() {
   const body = document.getElementById('f9cp-body'); if (!body) return;
@@ -13674,23 +13672,6 @@ function _f9RenderCastlePanelBody() {
       if (tcount > 0) html += '<div class="f9cp-pips">' + tp + '</div><div class="f9cp-stat"><span>DAMAGE</span><span>' + dmgStat + '</span></div>';
       html += '<button class="f9cp-up' + (canBuild && bOk ? '' : ' max') + '" id="f9cp-buildtow"' + (canBuild && bOk ? '' : ' disabled') + '>' +
         (canBuild ? (bOk ? ('🔨 BUILD TOWER (' + tcount + '/' + tMax + ') — <span class="f9cp-bcost">' + bCost + ' 🦴</span>') : ('🔒 NEED <span class="f9cp-bcost">' + bCost + ' 🦴</span>')) : 'MAX TOWERS') + '</button>';
-      // 🎯 NUOTOLIS — po +5% už 150 🦴, iki +30%. Lygį/nuotolį duoda serveris ('tower_state').
-      if (tcount > 0) {
-        const _ts = window._f9TowerState || {};
-        const rLv = _ts.rangeLevel | 0, rMax = _ts.rangeMaxLevel || _F9_TOWER_RANGE_MAX_LVL;
-        const rStep = _ts.rangeStepPct || _F9_TOWER_RANGE_STEP, rCost = _ts.rangeCost || _F9_UPG_COST.towerRange;
-        const rBase = (typeof _ts.rangeBase === 'number') ? _ts.rangeBase : _F9_TOWER_BASE_RANGE;
-        const rNow = (typeof _ts.range === 'number') ? _ts.range : rBase;
-        const rNext = Math.round(rBase * (1 + rStep / 100 * (rLv + 1)) * 100) / 100;
-        const rIsMax = rLv >= rMax, rOk = bank >= rCost;
-        html += '<div class="f9cp-stat"><span>RANGE +' + (rLv * rStep) + '%</span><span>' +
-          (rIsMax ? ('<b>' + rNow + '</b>') : (rNow + ' <span class="arw">→</span> <b>' + rNext + '</b>')) + '</span></div>';
-        html += rIsMax
-          ? '<button class="f9cp-up max">RANGE MAX (+' + (rMax * rStep) + '%)</button>'
-          : ('<button class="f9cp-up' + (rOk ? '' : ' max') + '" id="f9cp-towrange"' + (rOk ? '' : ' disabled') + '>' +
-             (rOk ? ('⬆ RANGE +' + rStep + '% — <span class="f9cp-bcost">' + rCost + ' 🦴</span>')
-                  : ('🔒 NEED <span class="f9cp-bcost">' + rCost + ' 🦴</span>')) + '</button>');
-      }
       if (tcount > 0 && !tIsMax) {
         const uCost = _F9_UPG_COST.tower[tl + 1] || 0, uOk = bank >= uCost;
         html += '<button class="f9cp-up' + (uOk ? '' : ' max') + '" id="f9cp-towup"' + (uOk ? '' : ' disabled') + '>' +
@@ -13765,9 +13746,6 @@ function _f9RenderCastlePanelBody() {
   if (ub && !ub.disabled) ub.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeWall) window.F9PvpLive.upgradeWall(); };
   const tb = body.querySelector('#f9cp-towup');
   if (tb && !tb.disabled) tb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeTowers) window.F9PvpLive.upgradeTowers(); };
-  // 🎯 nuotolio upgrade (+5% už 150 🦴) — serveris validuoja viską pats
-  const trb = body.querySelector('#f9cp-towrange');
-  if (trb && !trb.disabled) trb.onclick = function () { if (window.F9PvpLive && window.F9PvpLive.upgradeTowerRange) window.F9PvpLive.upgradeTowerRange(); };
   const bt = body.querySelector('#f9cp-buildtow');
   if (bt && !bt.disabled && _f9TowerCount() < _F9_MAX_TOWERS) bt.onclick = function () { _f9EnterTowerPlaceMode(); };
   const hb = body.querySelector('#f9cp-hospup');
