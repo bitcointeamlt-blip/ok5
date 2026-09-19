@@ -50,6 +50,9 @@ export class F9Wall extends Schema {
   @type("boolean") alive: boolean = true;
   @type("boolean") tower: boolean = false;   // 🗼 zip ginybos bokštas (šauna attackerius) — flank segmentai
   @type("uint8") level: number = 1;          // 🏰 sienos lygis: 1 = medinė (palisade), ≥2 = akmeninė (upgrade)
+  @type("uint8") ammo: number = 0;           // 🗼🔋 bokšto likę šūviai (0..3) — visi mato taškiukus
+  @type("uint8") reload: number = 0;         // 🗼🔋 užtaisymo progresas 1..99 % (0 = neužtaisoma)
+  @type("boolean") reloadWait: boolean = false;   // 🗼🔋 užtaisymas stovi: prie bokšto nėra gynėjo unito
 }
 
 export class F9State extends Schema {

@@ -1354,6 +1354,18 @@
       _status('🗼 ' + msg, '#f88');
       try { if (window.showGameNotification) window.showGameNotification('CASTLE', msg, '#e85d5d'); } catch (_) {}
     });
+    // 🗼🔋 Užtaisymas: serveris atsakė į paspaudimą ant bokšto mūšio metu.
+    room.onMessage('tower_reload_ok', function (e) {
+      if (e && e.near === false) _status('🗼 Move a unit next to the tower to reload', '#ffcf5c');
+      else _status('🗼 Reloading… keep a unit next to the tower', '#78e6eb');
+    });
+    room.onMessage('tower_reload_fail', function (e) {
+      var r = e ? e.reason : '';
+      if (r === 'full' || r === 'reloading') return;   // jau pilnas / jau taisosi — tylim
+      var msg = r === 'not_defender' ? 'Only the defender can reload towers' : 'Cannot reload now';
+      _status('🗼 ' + msg, '#f88');
+      try { if (window.showGameNotification) window.showGameNotification('CASTLE', msg, '#e85d5d'); } catch (_) {}
+    });
     room.onMessage('tower_build_fail', function (e) {
       var r = e ? e.reason : '';
       var msg = r === 'max' ? 'Max towers reached (5)' : r === 'tooclose' ? 'Too close — min 6 apart' : r === 'exists' ? 'Tower already there' : r === 'nowall' ? 'Wall broken there' : r === 'entrance' ? "Can't build on an entrance" : 'Cannot build here';
@@ -2126,6 +2138,9 @@
       }
       w.tower = !!sw.tower;
       w.level = sw.level || 1;   // 🏰 sienos lygis (1=medinė / ≥2=akmeninė)
+      w.ammo = sw.ammo;          // 🗼🔋 likę šūviai (undefined = senas serveris → taškiukų nepiešiam)
+      w.reload = sw.reload || 0;
+      w.reloadWait = !!sw.reloadWait;
       if (w.hp != null && sw.hp < w.hp) {
         w.hit = pnow();
         var _wdmg = w.hp - sw.hp;   // 💢 žalos skaičiukas virš sienos celės (w.x,w.y = cell coord, kaip unitams)
@@ -2521,6 +2536,25 @@
     var room = (window.F9PVP && window.F9PVP.room) ? window.F9PVP.room : null;
     if (room && typeof room.send === 'function') { try { room.send('demolish_tower', { y: y }); } catch (_) {} }
   }
+  // 🗼🔋 Užtaisyti bokštą (x,y celė) — serveris tikrina: gynėjas, mūšis, bokštas ne pilnas, šalia jo unitas.
+  function reloadTower(x, y) {
+    var room = (window.F9PVP && window.F9PVP.room) ? window.F9PVP.room : null;
+    if (room && typeof room.send === 'function') { try { room.send('tower_reload', { x: x, y: y }); } catch (_) {} }
+  }
+  // 🗼🔋 Mūšis vyksta = kambaryje yra puolikas (žaidėjas ne gynėjų komandoje 1). Kaip serverio _towerBattle.
+  function towerBattle() {
+    var room = _room();
+    if (!room || !room.state || room.state.phase !== 'playing' || !room.state.players || !room.state.players.forEach) return false;
+    var raid = false;
+    room.state.players.forEach(function (p) { if (p && p.team !== 1) raid = true; });
+    return raid;
+  }
+  // 🗼🔋 Aš ginu šią pilį mūšio metu → galiu užtaisyti bokštus.
+  function towerDefending() {
+    if (!towerBattle()) return false;
+    var room = _room(), me = room.state.players.get ? room.state.players.get(mySid) : null;
+    return !!me && me.team === 1;
+  }
   // 🗼ℹ️ Paprašom bokštų būklės (kiekis/lygis/investicija//kiek atiduotų už nugriovimą) — atsakymas 'tower_state'.
   function towerStateGet() {
     var room = (window.F9PVP && window.F9PVP.room) ? window.F9PVP.room : null;
@@ -2810,7 +2844,7 @@
   }
 
   window.F9PvpLive = {
-    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, upgradeMineCap: upgradeMineCap, upgradeRaidGuard: upgradeRaidGuard, removeShield: removeShield, buildTower: buildTower, demolishTower: demolishTower, towerStateGet: towerStateGet, stop: stop,
+    launch: launch, launchHome: launchHome, relaunchHome: relaunchHome, launchRaid: launchRaid, updateHomeSquad: updateHomeSquad, upgradeWall: upgradeWall, upgradeTowers: upgradeTowers, upgradeHospital: upgradeHospital, upgradeBlessGen: upgradeBlessGen, upgradeMineCap: upgradeMineCap, upgradeRaidGuard: upgradeRaidGuard, removeShield: removeShield, buildTower: buildTower, demolishTower: demolishTower, towerStateGet: towerStateGet, reloadTower: reloadTower, towerBattle: towerBattle, towerDefending: towerDefending, stop: stop,
     isActive: active,
     netTick: netTick,
     sendCommand: sendCommand,

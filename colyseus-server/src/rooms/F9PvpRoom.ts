@@ -190,6 +190,13 @@ const TOWER_RANGE = 6.5;    // šaudymo nuotolis (cells)
 const TOWER_CD = 3333;      // cooldown tarp šūvių (ms) — 3 šūviai / 10 s
 const TOWER_DMG = 3;        // bolt žala
 const TOWER_FIRE_MS = 380;  // delsa nuo charge iki hit (sutampa su bolt FX)
+/* 🗼🔋 09-19 (user): bokštas nebešaudo be galo — 3 šūviai, tada tuščias ir laukia užtaisymo.
+ *   GYVAS gynėjas: paspaudžia bokštą → 6 s, bet laikas bėga TIK kol prie bokšto stovi jo unitas.
+ *   Savininkas offline (AI gina): VISI bokštai prisipildo kartu kas 12 s. Ramybėje — visada pilni. */
+const TOWER_AMMO = 3;
+const TOWER_RELOAD_MS = 6000;
+const TOWER_AUTO_RELOAD_MS = 12000;
+const TOWER_RELOAD_NEAR = 2.5;   // cells — kaip arti bokšto turi stovėti gynėjo unitas
 
 // 🏠 NAMŲ GARNIZONO rikiuotė (user 07-03): 2 eilės po 6, IŠKART PO BARAKAIS (client barakai cx 64.78,
 //    kolizijos apačia ~8.4). FIKSUOTI grid slotai — spawn'as ir NAUJI registruoti unitai (set_squad)
@@ -665,6 +672,9 @@ export class F9PvpRoom extends Room<F9State> {
   private _ai = new Map<string, AIState>();
   private _walls: F9Wall[] = [];                            // 🏰 castle sienos segmentai (greitam priėjimui)
   private _towerCd: Record<string, number> = {};            // 🗼 zip bokšto cooldown ("x,y" → sim-laikas)
+  private _towerReload: Record<string, number> = {};        // 🗼🔋 rankinis užtaisymas ("x,y" → likę ms)
+  private _towerAutoAt = 0;                                 // 🗼🔋 offline: kitas bendras pripildymas (sim-laikas)
+  private _towerLastT = 0;                                  // 🗼🔋 dt skaičiavimui
   private _pending: { at: number; fn: () => void }[] = []; // planuoti hit'ai (sim-laikas)
   private _stake = new StakeService();                      // FAZA D/E: on-chain stake/payout/death (NO-OP kol nesukonfig.)
   private _decks = new Map<string, DeckEntry[]>();          // sid → žaidėjo deck (iš join opts.deck)
@@ -1350,6 +1360,8 @@ export class F9PvpRoom extends Room<F9State> {
     this.onMessage("build_tower", (client, msg: any) => this._handleBuildTower(client, msg));
     // 🗼💥 GRIOVIMAS + 50% kaulu grazinimas (tik savininkas, tik ramus home) — zr. _handleDemolishTower
     this.onMessage("demolish_tower", (client, msg: any) => this._handleDemolishTower(client, msg));
+    // 🗼🔋 mūšio metu gynėjas užtaiso bokštą (6 s, kol šalia stovi jo unitas) — žr. _handleTowerReload
+    this.onMessage("tower_reload", (client, msg: any) => this._handleTowerReload(client, msg));
     // 🗼ℹ Klientui: bokstu skaicius/lygis/investicija + kiek atiduotu uz vieno nugriovima
     this.onMessage("tower_state_get", (client) => { try { client.send("tower_state", this._towerStatePayload()); } catch (_) {} });
     // ⚔️ DEPLOY (07-04): pasveikę/nespawninti deko unitai → garnizonas. Tik savininkas, tik ramybėje.
@@ -2088,6 +2100,7 @@ export class F9PvpRoom extends Room<F9State> {
     this._walls = [];
     this.state.walls.clear();
     this._towerCd = {};
+    this._towerReload = {}; this._towerAutoAt = 0; this._towerLastT = 0;
     for (const c of PVP_WALL_CELLS) {
       const w = new F9Wall();
       w.x = c.x; w.y = c.y;
@@ -2105,6 +2118,7 @@ export class F9PvpRoom extends Room<F9State> {
       const seg = this.state.walls.get(WALL_COL + "," + t.y);
       if (seg) { seg.tower = true; seg.maxHp = towerHpForLevel(_tlvl); seg.hp = seg.maxHp; }
     }
+    for (const w of this._walls) w.ammo = w.tower ? TOWER_AMMO : 0;   // 🗼🔋 mūšis prasideda su pilnais bokštais
     // 1v1: užrakinam. 🏰 HOME: NErakinam (raideriai jungiasi vėliau). 🤖 ASYNC RAID: NErakinam (07-14 —
     //   grįžtantis SAVININKAS privalo patekti į kambarį TAKEOVER'ui; svetimus atmeta onJoin RAID_IN_PROGRESS).
     if (!this._home && !this._asyncRaid) { try { this.lock(); } catch (_) {} }
@@ -4558,8 +4572,12 @@ export class F9PvpRoom extends Room<F9State> {
   //    nuotoly TOWER_RANGE. Bolt FX klientui ('zip_shot'), žala server-authoritative po TOWER_FIRE_MS.
   private _updateTowers() {
     if (!this._combatEnabled) return;
+    const dt = Math.max(0, this._simTime - this._towerLastT);
+    this._towerLastT = this._simTime;
+    this._updateTowerAmmo(dt);
     for (const t of this._walls) {
       if (!t.alive || !t.tower) continue;
+      if (t.ammo <= 0) continue;   // 🗼🔋 tuščias → laukia užtaisymo
       const key = t.x + "," + t.y;
       if ((this._towerCd[key] || 0) > this._simTime) continue;
       const tx = t.x, ty = t.y;   // bokšto centras u-space = (t.x, t.y)
@@ -4572,6 +4590,7 @@ export class F9PvpRoom extends Room<F9State> {
       if (!best) { this._towerCd[key] = this._simTime + 400; continue; }   // ⚡ 07-06: no-target re-scan cooldown — idle bokštas nebeskena visų unitų KAS TIKĄ (buvo 30Hz×bokštai amžinai)
       const target: F9Unit = best;
       this._towerCd[key] = this._simTime + TOWER_CD;
+      t.ammo = t.ammo - 1;
       this.broadcast("zip_shot", { x: t.x, y: t.y, toId: target.id, fireMs: TOWER_FIRE_MS });
       const _tdmg = towerDmgForLevel(this._buildings.towerLevel || 1);   // 🗼 žala kyla su bokšto lygiu
       this._schedule(this._simTime + TOWER_FIRE_MS, () => {
@@ -4579,6 +4598,91 @@ export class F9PvpRoom extends Room<F9State> {
         if (u && u.alive) this._dealDmg(u, _tdmg, undefined);
       });
     }
+  }
+
+  // 🗼🔋 Mūšis = kambaryje yra puolikas (žaidėjas ne gynėjų komandoje). Namų pilis be puoliko = ramybė.
+  private _towerBattle(): boolean {
+    let raid = false;
+    this.state.players.forEach((p) => { if (p.team !== DEFENDER_TEAM) raid = true; });
+    return raid;
+  }
+
+  private _towerOwnerLive(): boolean {
+    return !!this._ownerSid && this.clients.some((c) => c.sessionId === this._ownerSid);
+  }
+
+  private _towerFriendNear(t: F9Wall): boolean {
+    let near = false;
+    this.state.units.forEach((u) => {
+      if (!near && u.alive && u.team === DEFENDER_TEAM && Math.hypot(u.x - t.x, u.y - t.y) <= TOWER_RELOAD_NEAR) near = true;
+    });
+    return near;
+  }
+
+  private _towerSet(t: F9Wall, ammo: number, reload: number, wait: boolean) {
+    if (t.ammo !== ammo) t.ammo = ammo;          // keičiam tik kai skiriasi — kitaip patch'ai kas tiką
+    if (t.reload !== reload) t.reload = reload;
+    if (t.reloadWait !== wait) t.reloadWait = wait;
+  }
+
+  private _updateTowerAmmo(dt: number) {
+    if (!this._towerBattle()) {
+      for (const t of this._walls) if (t.tower) this._towerSet(t, TOWER_AMMO, 0, false);
+      this._towerReload = {}; this._towerAutoAt = 0;
+      return;
+    }
+    if (!this._towerOwnerLive()) {
+      // 🤖 savininkas offline → VISI bokštai pilni kas 12 s, be unitų sąlygos
+      this._towerReload = {};
+      if (!this._towerAutoAt) this._towerAutoAt = this._simTime + TOWER_AUTO_RELOAD_MS;
+      const left = this._towerAutoAt - this._simTime;
+      if (left <= 0) this._towerAutoAt = this._simTime + TOWER_AUTO_RELOAD_MS;
+      const pct = Math.min(99, Math.max(1, Math.floor(100 * (1 - left / TOWER_AUTO_RELOAD_MS))));
+      for (const t of this._walls) {
+        if (!t.tower) continue;
+        if (left <= 0) this._towerSet(t, TOWER_AMMO, 0, false);
+        else this._towerSet(t, t.ammo, t.ammo < TOWER_AMMO ? pct : 0, false);
+      }
+      return;
+    }
+    this._towerAutoAt = 0;
+    for (const t of this._walls) {
+      if (!t.tower) continue;
+      const key = t.x + "," + t.y;
+      const left = this._towerReload[key];
+      if (left == null || !t.alive) {
+        if (left != null) delete this._towerReload[key];
+        this._towerSet(t, t.ammo, 0, false);
+        continue;
+      }
+      const near = this._towerFriendNear(t);
+      const nl = near ? left - dt : left;   // be gynėjo unito šalia užtaisymas stovi vietoje
+      if (nl <= 0) {
+        delete this._towerReload[key];
+        this._towerSet(t, TOWER_AMMO, 0, false);
+        continue;
+      }
+      this._towerReload[key] = nl;
+      this._towerSet(t, t.ammo, Math.min(99, Math.max(1, Math.floor(100 * (1 - nl / TOWER_RELOAD_MS)))), !near);
+    }
+  }
+
+  // 🗼🔋 Gynėjas paspaudė bokštą mūšio metu → pradedam 6 s užtaisymą (laikas bėga tik su jo unitu šalia).
+  private _handleTowerReload(client: Client, msg: any) {
+    const fail = (reason: string) => { try { client.send("tower_reload_fail", { reason }); } catch (_) {} };
+    if (this.state.phase !== "playing" || !this._ownerSid || client.sessionId !== this._ownerSid) return fail("not_defender");
+    if (!this._towerBattle()) return fail("no_battle");
+    const x = Math.round(Number(msg && msg.x)), y = Math.round(Number(msg && msg.y));
+    const key = x + "," + y;
+    const t = this.state.walls.get(key);
+    if (!t || !t.tower || !t.alive) return fail("no_tower");
+    if (t.ammo >= TOWER_AMMO) return fail("full");
+    if (this._towerReload[key] != null) return fail("reloading");
+    // be unito šalia užtaisymas vis tiek pradedamas, bet stovi (reloadWait), kol unitas atbėgs
+    const near = this._towerFriendNear(t);
+    this._towerReload[key] = TOWER_RELOAD_MS;
+    this._towerSet(t, t.ammo, 1, !near);
+    try { client.send("tower_reload_ok", { x, y, near }); } catch (_) {}
   }
 
   // 🧱 _blockWallCells PAŠALINTAS (⚡ 07-06): DEAD CODE — _tick jo nekvietė (sienos koliziją daro

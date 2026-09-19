@@ -4432,6 +4432,12 @@ function _f9InstallDragHandlers() {
       }
       if (inPanel) return;   // click ant kūno — swallow (toggle apdoros click handler'is)
     }
+    // 🗼🔋 MŪŠIO metu gynėjas spaudžia bokštą → užtaisymas (6 s, kol šalia stovi jo unitas). Serveris tikrina.
+    if (window.F9PvpLive && typeof window.F9PvpLive.towerDefending === 'function' && window.F9PvpLive.towerDefending() && typeof _f9WallAt === 'function') {
+      const _rmx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _rmy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
+      const _rseg = _f9WallAt(_rmx / CELL - 0.5, _rmy / CELL - 0.5);
+      if (_rseg && _rseg.tower) { window.F9PvpLive.reloadTower(_rseg.x, _rseg.y); return; }
+    }
     // 🏗️ click ant SAVO SIENOS pilyje → upgrade siena (tik home owner, ne raido metu). Resursai = vėliau.
     if (window.__f9HomeActive && !window.__f9RaidActive && typeof _f9WallAt === 'function') {
       const _wmx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wmy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
@@ -9316,6 +9322,40 @@ function _f9DrawZipTowerSeg(seg, now) {
     ctx.beginPath(); ctx.moveTo(_mx - _s, _my - _s); ctx.lineTo(_mx + _s, _my + _s); ctx.moveTo(_mx + _s, _my - _s); ctx.lineTo(_mx - _s, _my + _s); ctx.stroke();
     ctx.restore();
   }
+  _f9DrawTowerAmmo(seg, cx, zby, now);
+}
+
+// 🗼🔋 Mūšio metu virš bokšto 3 taškiukai = likę šūviai (mato visi). Užtaisant — juostelė po taškiukais;
+//    gintarinė ir mirksi, kai užtaisymas stovi (šalia nėra gynėjo unito). Gynėjui tuščias bokštas rodo RELOAD.
+function _f9DrawTowerAmmo(seg, cx, zby, now) {
+  if (seg.ammo == null) return;   // senas serveris be šovinių
+  const live = window.F9PvpLive;
+  if (!live || typeof live.towerBattle !== 'function' || !live.towerBattle()) return;
+  const C = CELL, n = 3, r = Math.max(2.5, C * 0.085), gap = r * 2.8;
+  const y = zby - C * 0.28, x0 = cx - gap * (n - 1) / 2;
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * gap, full = i < seg.ammo;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = full ? '#78e6eb' : 'rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.lineWidth = 1.2; ctx.strokeStyle = full ? 'rgba(10,40,45,0.9)' : 'rgba(160,160,160,0.7)'; ctx.stroke();
+  }
+  const defending = typeof live.towerDefending === 'function' && live.towerDefending();
+  if (seg.reload > 0) {
+    const bw = gap * (n - 1) + r * 2, bx = cx - bw / 2, by = y + r + 2.5;
+    const blink = seg.reloadWait ? 0.45 + 0.55 * (Math.sin(now * 0.012) + 1) * 0.5 : 1;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
+    ctx.globalAlpha = blink; ctx.fillStyle = seg.reloadWait ? '#ffcf5c' : '#78e6eb';
+    ctx.fillRect(bx, by, bw * Math.min(1, seg.reload / 100), 3); ctx.globalAlpha = 1;
+  }
+  const label = !defending ? '' : (seg.reload > 0 && seg.reloadWait) ? 'NEED UNIT' : (!seg.reload && seg.ammo === 0) ? 'RELOAD' : '';
+  if (label) {
+    const pulse = 0.55 + 0.45 * (Math.sin(now * 0.008) + 1) * 0.5;
+    ctx.font = 'bold ' + Math.max(9, Math.round(C * 0.22)) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.globalAlpha = pulse; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(label, cx, y - r - 3); ctx.fillStyle = '#ffcf5c'; ctx.fillText(label, cx, y - r - 3);
+  }
+  ctx.restore();
 }
 
 // 🏰 GATE anga (tamsus praėjimas + medinis rėmas + portcullis + „GATE" etiketė). TIK kai yra gate tarpas.
