@@ -42,6 +42,10 @@ const CHALLENGE_MS = 30000;   // kiek host'as turi laiko atsakyti „do you want
 //    120 s pakako desktop plėtiniui, bet TELEFONE kelias yra: perjungimas į Ronin appsą →
 //    WalletConnect sesija → patvirtinimas → grįžimas į naršyklę → tx blokas. Tai reguliariai
 //    netilpdavo, laikmatis nutraukdavo mačą, ir žaidėjams atrodydavo „abu sumokėjom, o žaidimo nėra".
+/* 🔌 Kiek laikom žaidėjo vietą po ryšio trūkio. Buvo 8 s, bet klientas persijungimo NETURĖJO —
+ * langas buvo niekada nepanaudotas. Nuo 2026-09-20 `tetris/js/net.js` bando grįžti ~24 s, tad
+ * serverio langas turi būti ilgesnis; mobiliam tinklui 8 s ir šiaip per mažai. */
+const RECONNECT_S = Number(process.env.BLOCKS_RECONNECT_S || 30);
 const STAKE_MS = Number(process.env.BLOCKS_STAKE_MS) || 240000;
 const LINES_PER_UNIT = 1;
 
@@ -405,8 +409,8 @@ export class BlocksRoom extends Room<BlocksState> {
     //    buvo galutinis. Būtent dėl to skundas „Tetris paėmė ★ ir RONKE dėl nepavykusių startų“.
     //    Kaina: pasidavus varžovas laukia iki 8 s. Negrįžus rezultatas TOKS PAT kaip anksčiau —
     //    `_winByLeave`, tik ne akimirksniu. Nepelnyto pralaimėjimo kaina buvo didesnė.
-    if (consented) console.log(`[BLOCKS] žaidėjas išėjo sąmoningai — duodam 8 s grįžti (room=${this.roomId})`);
-    try { await this.allowReconnection(client, 8); }
+    if (consented) console.log(`[BLOCKS] žaidėjas išėjo sąmoningai — duodam ${RECONNECT_S} s grįžti (room=${this.roomId})`);
+    try { await this.allowReconnection(client, RECONNECT_S); }
     catch { this._winByLeave(client); }
   }
 

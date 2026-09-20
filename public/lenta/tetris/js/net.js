@@ -63,6 +63,80 @@
   //   mock.disconnect()
   NET.useMock = function (mockServer) { NET._mock = mockServer; };
 
+  /* 🔌 PERSIJUNGIMAS PO RYSIO TRUKIO (2026-09-20).
+   * Iki siol Tetris NETUREJO jokio atsistatymo: `room.onLeave` tiesiog paskelbdavo `close`, ir macas
+   * baigdavosi. Serveris tuo metu LAUKIA (`allowReconnection`) — tas langas buvo niekada nepanaudotas,
+   * o po jo `_winByLeave` atimdavo ir maca, ir statyma. Pilis (f9_pvp_live.js) tokia mechanika turi
+   * seniai, todel ten tinklo mirktelejimas nepastebimas, o Tetryje buvo mirtinas.
+   * Cia: isimenam `reconnectionToken` ir po NETIKETO atsijungimo bandom grizti ~24 s (20 × 1,2 s),
+   * kas telpa i serverio 30 s langa. `close` skelbiam tik tada, kai grizti nepavyko.
+   * Samoningas isejimas (`NET.disconnect`) ir pasibaiges macas (`gameover`) persijungimo NEPRADEDA. */
+  var RC_TRIES = 20, RC_GAP_MS = 1200;
+  var _client = null, _rtoken = '', _rcTimer = null;
+  NET._bye = false;    // samoningai isejom
+  NET._over = false;   // macas jau baigtas (gameover) — grizti nebera kur
+
+  /* Matomas pranesimas: be jo zaidejas 24 s ziuri i sustinguisi lauka ir mano, kad viskas baigta.
+     Savarankiskas — be CSS failu ir be priklausomybiu nuo likusio UI. */
+  function _rcBanner(text) {
+    try {
+      var d = global.document; if (!d || !d.body) return;
+      var el = d.getElementById('rb-net-rc');
+      if (!text) { if (el) el.remove(); return; }
+      if (!el) {
+        el = d.createElement('div'); el.id = 'rb-net-rc';
+        el.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2147483000;' +
+          'font-family:monospace;font-size:12px;font-weight:700;padding:9px 16px;border-radius:10px;' +
+          'background:linear-gradient(180deg,#2b2412,#161208);border:2px solid #c8a24a;color:#ffe3a0;' +
+          'box-shadow:0 4px 16px rgba(0,0,0,.6);pointer-events:none;';
+        d.body.appendChild(el);
+      }
+      el.textContent = text;
+    } catch (_) {}
+  }
+
+  function _wire(room) {
+    NET._room = room; NET.status = 'open';
+    NET.sessionId = room.sessionId; NET.roomId = room.roomId;
+    if (room.reconnectionToken) _rtoken = room.reconnectionToken;
+    room.onMessage('*', function (type, payload) {
+      if (type === 'gameover') NET._over = true;
+      NET.emit(type, payload);
+    });
+    room.onLeave(function (code) { _onLeave(code); });
+    room.onError && room.onError(function (code, message) { NET.status = 'error'; NET.emit('error', { code: code, message: message }); });
+  }
+
+  function _onLeave(code) {
+    NET._room = null;
+    // 4000 = consented leave (patys ismetem / pats isejo) — cia grizti nereikia.
+    if (NET._bye || NET._over || code === 4000 || !_client || !_rtoken) {
+      NET.status = 'closed'; NET.emit('close', { code: code }); return;
+    }
+    NET.status = 'reconnecting';
+    console.warn('[net] 🔌 rysys nutruko (code ' + code + ') — bandom grizti i maca');
+    _rcBanner('🔌 Connection lost — reconnecting…');
+    NET.emit('reconnecting', { code: code, tries: RC_TRIES, gapMs: RC_GAP_MS });
+    _reconnect(0);
+  }
+
+  function _reconnect(attempt) {
+    if (NET._bye || NET._over) return;
+    _client.reconnect(_rtoken).then(function (room) {
+      _wire(room);
+      _rcBanner('');
+      console.log('[net] ✅ persijungta po ' + (attempt + 1) + ' bandymo(-u)');
+      NET.emit('reopen', { sessionId: room.sessionId, roomId: room.roomId, attempts: attempt + 1 });
+    }).catch(function () {
+      if (attempt + 1 >= RC_TRIES) {
+        console.warn('[net] ❌ persijungti nepavyko per ' + Math.round(RC_TRIES * RC_GAP_MS / 1000) + ' s');
+        _rcBanner('');
+        NET.status = 'closed'; NET.emit('close', { code: 'reconnect_failed' }); return;
+      }
+      _rcTimer = setTimeout(function () { _reconnect(attempt + 1); }, RC_GAP_MS);
+    });
+  }
+
   NET.connect = function (mode, opts) {
     opts = opts || {};
     NET.mode = mode; NET.status = 'connecting';
@@ -77,6 +151,8 @@
     // colyseus
     if (!global.Colyseus || !global.Colyseus.Client) { console.error('[net] Colyseus client neįkeltas (../colyseus.browser.js)'); NET.status = 'error'; return Promise.reject('no_colyseus'); }
     var client = new global.Colyseus.Client(_endpoint());
+    _client = client; NET._bye = false; NET._over = false;
+    if (_rcTimer) { clearTimeout(_rcTimer); _rcTimer = null; }
     /* Matchmaking keliai:
      *   opts.roomId              → joinById  (draugas per kodą, ARBA pasirinktas žaidėjas iš lobio sąrašo)
      *   opts.matchmake==='create'→ create(private)  (privatus kambarys → dalinuosi kodu draugui; NEsąraše)
@@ -93,10 +169,7 @@
       p = client.joinOrCreate('blocks_room', Object.assign({}, opts, { mode: 'public' }));
     }
     return p.then(function (room) {
-      NET._room = room; NET.status = 'open'; NET.sessionId = room.sessionId; NET.roomId = room.roomId;
-      room.onMessage('*', function (type, payload) { NET.emit(type, payload); });
-      room.onLeave(function () { NET.status = 'closed'; NET.emit('close'); });
-      room.onError && room.onError(function (code, message) { NET.status = 'error'; NET.emit('error', { code: code, message: message }); });
+      _wire(room);
       NET.emit('open', { sessionId: room.sessionId, roomId: room.roomId });
       return room;
     }).catch(function (e) { NET.status = 'error'; NET.emit('error', e); throw e; });
@@ -128,6 +201,8 @@
   };
 
   NET.disconnect = function () {
+    NET._bye = true;   // 🔌 samoningas isejimas — jokio persijungimo
+    if (_rcTimer) { clearTimeout(_rcTimer); _rcTimer = null; }
     if (NET.mode === 'mock' && NET._mock) { try { NET._mock.disconnect(); } catch (_) {} }
     if (NET._room) { try { NET._room.leave(); } catch (_) {} NET._room = null; }
     NET.status = 'closed'; NET.mode = null; NET.emit('close');
