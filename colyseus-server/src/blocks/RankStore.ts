@@ -169,18 +169,101 @@ export async function applyResultVsAI(playerAddr: string, won: boolean, roomId: 
 // ── 🎖️ UNITŲ XP FONDAS: linijų XP (lines × (lyga+1)) kaupiasi žaidėjo pool'e; po mačo žaidėjas
 //   PATS paskiria visą pool'ą pasirinktam ĮREGISTRUOTAM deko unitui (on-chain deck tiesa — DeckChain).
 //   Supabase: xpunits_<wallet> = { pool: number, units: { "<tokenId>": xp } }. Op-queue per wallet.
+/* 🛟 PATVARUS ĮRAŠYMAS (2026-09-20, user: „žmonės sužaidė teterį, o XP neatsiranda").
+ *
+ * KAS BUVO NE TAIP. Abu XP/trofėjų skaitikliai darė read-modify-write per supabase-js, bet
+ * NEI SKAITYMO, NEI RAŠYMO klaidos netikrino — `const { data } = await …` klaidą tyliai praleidžia:
+ *   • skaitymas krito ⇒ `data === null` atrodo kaip „eilutės dar nėra" ⇒ upsert perrašo
+ *     seną sukauptą reikšmę NAUJU mačo prieaugiu. Žaidėjui tai atrodo kaip „pool DINGO".
+ *   • rašymas krito ⇒ funkcija vis tiek grąžindavo naują sumą, t. y. MELAVO, kad įrašė,
+ *     ir to mačo XP dingdavo negrįžtamai.
+ * Išmatuota 09-20: iš 18 realių mačų 2 liko be XP, nors `rank_` eilutė užsirašė tą pačią
+ * sekundę (vadinasi mačo pabaiga tikrai įvyko ir XP funkcija buvo iškviesta).
+ *
+ * DABAR: klaidos metamos, 3 bandymai su atsitraukimu, o galutinai nepavykus — prieaugis guli
+ * atmintyje ir kartojamas kas 30 s, kol pavyks. Prarasti galima tik perkrovus serverį per tą
+ * langą — nepalyginamai siauriau nei „vienas DB trūkčiojimas = XP nebėra".
+ * 🔑 Svarbiausia: NIEKADA nerašom naujos reikšmės, jei senos perskaityti NEPAVYKO. */
+const RETRY_MS = [250, 1000, 3000];
+const PEND_FLUSH_MS = 30000;
+const PEND_MAX_TRIES = 40;          // ~20 min kartojimo, tada pasiduodam ir garsiai pasakom
+const _sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+type BumpField = "pool" | "n";
+type Bump = { key: string; field: BumpField; amount: number; tries: number; at: number };
+const _pend: Bump[] = [];
+let _pendTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Eilutės skaitymas, kuris SKIRIA „nėra eilutės" nuo „nepavyko perskaityti". */
+async function _readBuildings(c: SupabaseClient, key: string): Promise<any> {
+  const { data, error } = await c.from("f9_bases").select("buildings").eq("ronin_address", key).maybeSingle();
+  if (error) throw new Error("read " + key + ": " + (error.message || "db error"));
+  return (data as any)?.buildings || {};
+}
+async function _writeBuildings(c: SupabaseClient, key: string, rec: any): Promise<void> {
+  const { error } = await c.from("f9_bases").upsert({ ronin_address: key, buildings: rec }, { onConflict: "ronin_address" });
+  if (error) throw new Error("write " + key + ": " + (error.message || "db error"));
+}
+/** Vienas bandymas: perskaityk → pridėk → įrašyk. Bet kuri klaida METAMA. */
+async function _bumpOnce(key: string, field: BumpField, amount: number): Promise<number> {
+  const c = sb(); if (!c) throw new Error("no supabase");
+  const b = await _readBuildings(c, key);
+  const add = Math.floor(amount);
+  const rec: any = field === "pool"
+    ? { pool: (Number(b.pool) || 0) + add, units: b.units || {}, at: Date.now() }
+    : { n: (Number(b.n) || 0) + add, at: Date.now() };
+  await _writeBuildings(c, key, rec);
+  return field === "pool" ? rec.pool : rec.n;
+}
+function _pendPush(key: string, field: BumpField, amount: number) {
+  _pend.push({ key, field, amount, tries: 0, at: Date.now() });
+  if (_pendTimer) return;
+  _pendTimer = setInterval(() => { void _pendFlush(); }, PEND_FLUSH_MS);
+  if (typeof (_pendTimer as any).unref === "function") (_pendTimer as any).unref();   // netrukdo procesui baigtis
+}
+async function _pendFlush(): Promise<void> {
+  const batch = _pend.splice(0, _pend.length);
+  for (const it of batch) {
+    try {
+      const v = await _op(it.key, () => _bumpOnce(it.key, it.field, it.amount));
+      console.log(`[XpUnits] 🛟 atkartota +${it.amount} → ${it.key} (dabar ${v})`);
+    } catch (e: any) {
+      it.tries++;
+      if (it.tries < PEND_MAX_TRIES) _pend.push(it);
+      else console.error(`[XpUnits] 💀 PRARASTA +${it.amount} → ${it.key} po ${PEND_MAX_TRIES} bandymų: ${String(e?.message || e).slice(0, 120)}`);
+    }
+  }
+  if (!_pend.length && _pendTimer) { clearInterval(_pendTimer); _pendTimer = null; }
+}
+/** 3 bandymai; nepavykus — į kartojimo eilę (prieaugis NEPRARANDAMAS). */
+async function _bumpRetry(key: string, field: BumpField, amount: number, label: string): Promise<number | null> {
+  let last: any = null;
+  for (let i = 0; i <= RETRY_MS.length; i++) {
+    try { return await _bumpOnce(key, field, amount); }
+    catch (e) { last = e; if (i < RETRY_MS.length) await _sleep(RETRY_MS[i]); }
+  }
+  _pendPush(key, field, amount);
+  console.error(`[${label}] ❌ +${amount} neįrašyta po ${RETRY_MS.length + 1} bandymų (${key}) — į kartojimo eilę. ${String(last?.message || last).slice(0, 140)}`);
+  return null;
+}
+/** Skaitymas su pakartojimais — kad vienas trūkčiojimas UI nerodytų „pool = 0". */
+async function _readRetry(key: string): Promise<any | null> {
+  const c = sb(); if (!c) return null;
+  for (let i = 0; i <= 1; i++) {
+    try { return await _readBuildings(c, key); }
+    catch (e: any) { if (i === 0) await _sleep(300); else console.warn(`[XpUnits] skaitymas nepavyko (${key}): ${String(e?.message || e).slice(0, 120)}`); }
+  }
+  return null;   // null = NEŽINOMA (ne „tuščia")
+}
+/** Testams/diagnostikai: kiek prieaugių dar laukia kartojimo eilėje. */
+export function xpPendingCount(): number { return _pend.length; }
+export function xpPendingFlushNow(): Promise<void> { return _pendFlush(); }
+
+// ── 🎖️ UNITŲ XP FONDAS ───────────────────────────────────────────────────────
 export async function xpPoolAdd(wallet: string, amount: number): Promise<number | null> {
   const c = sb(); const w = _norm(wallet);
   if (!c || !_isAddr(w) || !(amount > 0)) return null;
-  return _op("xpu_" + w, async () => {
-    try {
-      const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "xpunits_" + w).maybeSingle();
-      const b = (data as any)?.buildings || {};
-      const rec = { pool: (Number(b.pool) || 0) + Math.floor(amount), units: b.units || {}, at: Date.now() };
-      await c.from("f9_bases").upsert({ ronin_address: "xpunits_" + w, buildings: rec }, { onConflict: "ronin_address" });
-      return rec.pool;
-    } catch (e: any) { console.warn("[XpUnits] add fail:", e?.message); return null; }
-  });
+  return _op("xpu_" + w, () => _bumpRetry("xpunits_" + w, "pool", amount, "XpUnits"));
 }
 
 /* 🧱🏆 TETRISŲ (4 linijų vienu metu) skaitiklis — trofėjų misijai „30 → 69 → 169 tetrisų".
@@ -189,36 +272,24 @@ export async function xpPoolAdd(wallet: string, amount: number): Promise<number 
 export async function tetrisAdd(wallet: string, count: number): Promise<number | null> {
   const c = sb(); const w = _norm(wallet);
   if (!c || !_isAddr(w) || !(count > 0)) return null;
-  return _op("tet_" + w, async () => {
-    try {
-      const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "tetris_" + w).maybeSingle();
-      const b = (data as any)?.buildings || {};
-      const rec = { n: (Number(b.n) || 0) + Math.floor(count), at: Date.now() };
-      await c.from("f9_bases").upsert({ ronin_address: "tetris_" + w, buildings: rec }, { onConflict: "ronin_address" });
-      return rec.n;
-    } catch (e: any) { console.warn("[TetrisCount] add fail:", e?.message); return null; }
-  });
+  return _op("tet_" + w, () => _bumpRetry("tetris_" + w, "n", count, "TetrisCount"));
 }
 export async function tetrisGet(wallet: string): Promise<number> {
-  const c = sb(); const w = _norm(wallet);
-  if (!c || !_isAddr(w)) return 0;
-  try {
-    const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "tetris_" + w).maybeSingle();
-    return Number((data as any)?.buildings?.n) || 0;
-  } catch { return 0; }
+  const w = _norm(wallet);
+  if (!sb() || !_isAddr(w)) return 0;
+  const b = await _readRetry("tetris_" + w);
+  return b ? (Number(b.n) || 0) : 0;
 }
 
 export async function xpUnitsGet(wallet: string): Promise<{ pool: number; units: Record<string, number> }> {
-  const c = sb(); const w = _norm(wallet);
+  const w = _norm(wallet);
   const empty = { pool: 0, units: {} as Record<string, number> };
-  if (!c || !_isAddr(w)) return empty;
-  try {
-    const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "xpunits_" + w).maybeSingle();
-    const b = (data as any)?.buildings || {};
-    const units: Record<string, number> = {};
-    for (const k of Object.keys(b.units || {})) units[k] = Number(b.units[k]) || 0;
-    return { pool: Number(b.pool) || 0, units };
-  } catch { return empty; }
+  if (!sb() || !_isAddr(w)) return empty;
+  const b = await _readRetry("xpunits_" + w);
+  if (!b) return empty;
+  const units: Record<string, number> = {};
+  for (const k of Object.keys(b.units || {})) units[k] = Number(b.units[k]) || 0;
+  return { pool: Number(b.pool) || 0, units };
 }
 
 // VISAS pool'as → pasirinktam unitui (tokenId jau patikrintas prieš deką kvietėjo pusėje).
@@ -227,14 +298,15 @@ export async function xpAssign(wallet: string, tokenId: string): Promise<{ ok: b
   if (!c || !_isAddr(w) || !tokenId) return { ok: false };
   return _op("xpu_" + w, async () => {
     try {
-      const { data } = await c.from("f9_bases").select("buildings").eq("ronin_address", "xpunits_" + w).maybeSingle();
-      const b = (data as any)?.buildings || {};
+      /* 🔑 Skaitymo klaida dabar METAMA — anksčiau ji atrodydavo kaip tuščias pool'as, o tolesnis
+       * upsert būtų perrašęs eilutę nuliais ir sunaikinęs žaidėjo XP. */
+      const b = await _readBuildings(c, "xpunits_" + w);
       const pool = Number(b.pool) || 0;
       if (pool <= 0) return { ok: false, pool: 0 };
       const units = b.units || {};
       units[tokenId] = (Number(units[tokenId]) || 0) + pool;
       const rec = { pool: 0, units, at: Date.now() };
-      await c.from("f9_bases").upsert({ ronin_address: "xpunits_" + w, buildings: rec }, { onConflict: "ronin_address" });
+      await _writeBuildings(c, "xpunits_" + w, rec);
       console.log(`[XpUnits] 🎖️ ${w.slice(0, 8)}… unit #${tokenId} += ${pool} XP (viso ${units[tokenId]})`);
       return { ok: true, unitXp: units[tokenId], pool: 0 };
     } catch (e: any) { console.warn("[XpUnits] assign fail:", e?.message); return { ok: false }; }

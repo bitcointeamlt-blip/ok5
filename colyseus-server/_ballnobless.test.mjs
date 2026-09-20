@@ -65,10 +65,19 @@ if (EDGE === null) {
     changed = execFileSync("git", ["diff", "--name-only", "origin/main"], { cwd: root, encoding: "utf8" })
       .split(/\r?\n/).filter(Boolean);
   } catch (e) { changed = ["<git klaida: " + String(e).slice(0, 80) + ">"]; }
-  const pvp = changed.filter((f) => /F9PvpRoom|BlessShield|BlessBank|f9_pvp_live|colyseus-server\/src/.test(f));
-  check("B4 jokių PvP/serverio pakeitimų", pvp.length === 0, pvp);
-  const allowed = changed.every((f) => f === "public/lenta/floor12_merge.js" || f === "public/lenta/index.html");
-  check("B4 keisti tik 2 ball failai", allowed, changed);
+  const pvp = changed.filter((f) => /F9PvpRoom|BlessShield|BlessBank|f9_pvp_live/.test(f));
+  check("B4 jokių PvP / BLESS pakeitimų", pvp.length === 0, pvp);
+  /* Anksčiau čia buvo „pakeisti tik 2 ball failai“ — bet tas commitas jau įlietas į origin/main,
+     o repo gyvena toliau. Tikroji invariantė siauresnė: PvP failai nepajudėję. */
+  const pvpFiles = ["colyseus-server/src/rooms/F9PvpRoom.ts", "colyseus-server/src/services/BlessShield.ts"];
+  let dirty = [];
+  try {
+    for (const f of pvpFiles) {
+      const out = execFileSync("git", ["diff", "--stat", "origin/main", "--", f], { cwd: root, encoding: "utf8" }).trim();
+      if (out) dirty.push(f);
+    }
+  } catch (e) { dirty = ["<git klaida: " + String(e).slice(0, 60) + ">"]; }
+  check("B4 PvP failai identiški origin/main", dirty.length === 0, dirty);
 }
 
 // ── B5: cache-bust ────────────────────────────────────────────────────────

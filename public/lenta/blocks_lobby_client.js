@@ -303,6 +303,9 @@
       var kill = function () {
         try { ov.remove(); } catch (_) {}
         if (_xpReport && (_xpReport.pool > 0 || _xpReport.gain > 0)) setTimeout(_showXpAssign, 150);   // 🎖️ XP priskirstymas po korteles
+        /* 🎖️ 09-20: anksčiau, kai XP už mačą būdavo 0, po mačo NEBUVO RODOMA NIEKO — žaidėjai
+           tai laikė dingusiu XP. Pasakom priežastį: XP duoda TIK išvalytos linijos. */
+        else if (_xpReport && !(_xpReport.gain > 0)) setTimeout(function () { _xpNoneNote(_xpReport); }, 150);
       };
       ov.onclick = kill;
       // ✋ kortelė NEsislepia pati — uždarai TU (▶ CONTINUE arba paspaudimas bet kur) [user 08-09]
@@ -789,6 +792,27 @@
       '</div>';
     }
     return out;
+  }
+  /* 🎖️❓ Kodėl po mačo nėra XP: dažniausiai todėl, kad neuždaryta nė viena linija.
+     Serveris XP priskaito tik už linijas (lines × (lyga+1)), tad 0 linijų = 0 XP, ir tai teisinga. */
+  function _xpNoneNote(rep) {
+    try {
+      _css();
+      var t = document.getElementById('rb-xp-none');
+      if (!t) {
+        t = document.createElement('div'); t.id = 'rb-xp-none';
+        t.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100200;font-family:monospace;' +
+          'background:linear-gradient(180deg,#2b2412,#161208);border:2px solid #c8a24a;border-radius:12px;padding:11px 17px;' +
+          'color:#ffe3a0;box-shadow:0 4px 18px rgba(0,0,0,.6);text-align:center;animation:rbToastIn .3s ease-out;';
+        document.body.appendChild(t);
+      }
+      var lines = (rep && rep.lines) | 0;
+      t.innerHTML = '<div style="font-weight:800;font-size:13px;">No XP this match</div>' +
+        '<div style="font-size:10px;opacity:.8;margin-top:3px;">' +
+        (lines > 0 ? 'cleared ' + lines + ' line' + (lines > 1 ? 's' : '') + ' — XP was not credited, try again'
+                   : 'XP comes from cleared lines — you cleared none') + '</div>';
+      t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(function () { if (t) t.style.display = 'none'; }, 6000);
+    } catch (_) {}
   }
   function _xpPoolGet(addr) {
     var R = String(addr || '').toLowerCase();
