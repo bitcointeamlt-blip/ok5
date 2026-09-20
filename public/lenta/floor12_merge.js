@@ -23909,17 +23909,13 @@
 
     const claimedSuccess = (resp.xpTxHashes || []);
 
-    // 🪽 08-23: BLESS neleido šiems sudegti — backend'as juos išėmė iš burn TX. Pasakom žaidėjui,
-    //    kitaip unitas dingsta iš mūšio, o piniginėje lieka, ir atrodo kaip klaida.
-    const blessSaved = resp.savedTokenIds || [];
-
-    if (blessSaved.length) console.log('[F12 settle] 🪽 BLESS išgelbėjo:', blessSaved.join(', '));
+    /* 🪽❌ 09-20 (user): ball žaidime BLESS NEBEGALIOJA — mirtis 100%, uždėtas skydas ar ne.
+     *    Skydas lieka TIK pilies (PvP) pusėje. Backend degina visus žuvusius, tad `savedTokenIds`
+     *    nebeskaitomas — senas backend jį dar grąžintų, ir ekrane atsirastų melas. */
 
     _showSettleResult({
 
       dead: actuallyBurned,
-
-      blessSaved: blessSaved,
 
       claimed: claimedSuccess.map(x => ({
 
@@ -24166,13 +24162,6 @@
 
     }
 
-    /* 🪽 08-23: BLESS neleido unitui sudegti. Be šito pranešimo unitas dingsta iš mūšio, o NFT lieka
-     * piniginėje — žaidėjui atrodytų kaip klaida, o skydas būtų nurašytas nepastebimai. */
-    if (info.blessSaved && info.blessSaved.length) {
-      html += '<div style="margin-top:10px;padding:7px;background:rgba(120,220,255,0.12);border:1px solid #4aa8c8;color:#aef0f7;font-size:7px;line-height:1.5;text-align:center">'
-        + '🪽 DEATH SHIELD SAVED ' + info.blessSaved.length + ' UNIT' + (info.blessSaved.length > 1 ? 'S' : '')
-        + '<div style="opacity:0.75;margin-top:3px">#' + info.blessSaved.join(' · #') + ' — NFT not burned. Shield consumed.</div></div>';
-    }
 
     if (info.relayWarning) {
 
