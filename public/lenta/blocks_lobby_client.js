@@ -1406,7 +1406,29 @@
       else if (++n > 240) { clearInterval(t); _status('Wallet not connected \u2014 tap again to retry.', true); }
     }, 500);
   }
+  /* 🛡💸 DVIGUBO MOKĖJIMO SARGAS (2026-09-20, žaidėjo pranešimas: „vs ai if you click play it
+   * doubles or triples the transaction but not play“).
+   * Grandinėje patvirtinta: piniginė `0xc7ce068c…` 09:40:35, 09:40:45 ir 09:40:47 UTC sumokėjo
+   * po 25 RONKE — 75 RONKE už vieną mačą, kuris dar ir krito (`prep_not_ready`).
+   * Šaltinis: nei `_doAiRanked`, nei `_doStake` neturėjo JOKIO užrakto — kiekvienas paspaudimas
+   * kūrė naują kambarį, serveris atsiųsdavo `stake_now`, ir piniginė atidarydavo dar vieną mokėjimą.
+   * Žaidėjas spaudžia pakartotinai būtent tada, kai žaidimas neprasideda — t. y. blogiausiu momentu.
+   * Du sluoksniai: (a) `_stakeBusy` — kol piniginės pažadas neatsakė, antro nepradedam;
+   * (b) `_stakePaidAt` — tą patį fee per 25 s antrą kartą atmetam. Teisėtas kitas mačas būna
+   * po 2–3 min (išmatuota iš 14 to paties žaidėjo įmokų), tad šis langas nieko gyvo neblokuoja. */
+  var _stakeBusy = false, _stakePaidAt = 0, _stakePaidKey = '';
   function _doStake(tier, ai, aiFee) {
+    var key = (ai ? 'ai' : 'pvp') + ':' + tier;
+    if (_stakeBusy) {
+      console.warn('[BLOCKS] stake_now praleistas — mokėjimas jau vyksta', key);
+      _status('⏳ Payment already in progress — confirm it in your wallet.', true);
+      return;
+    }
+    if (key === _stakePaidKey && Date.now() - _stakePaidAt < 25000) {
+      console.warn('[BLOCKS] stake_now praleistas — tas pats fee ką tik sumokėtas', key);
+      _status('✅ Already paid for this match — waiting for it to start.', true);
+      return;
+    }
     // 🛟 08-20: TYLUS `return` čia kainavo žaidėjams pinigus. Jei šitas klientas nelaiko wager'io
     //    įjungto (blocks_wager.js neįsikrovė, PEWPEW_PLAY_V2/BLOCKS_WAGER_ON dar nenustatyti, ad-blocker),
     //    žaidėjas NEGAUDAVO NEI piniginės popup'o, NEI klaidos — tiesiog nieko. Serveris tuo metu laukdavo
@@ -1423,15 +1445,25 @@
     var useAi = !ai && _aiPlayFlag;
     _alarm('patvirtink statymą piniginėje');   // 🔊 piniginės patvirtinimo lentelė — irgi „lentutė, kad startuoti"
     _status('Confirm <b>' + tier + ' RONKE</b> ' + (ai ? 'RANKED AI fee' : 'stake') + ' in your wallet…', true);
+    _stakeBusy = true;
     var pay = ai ? window.BlocksWager.payExact(tier) : window.BlocksWager.payEntry(tier);
     pay.then(function (r) {
+      _stakeBusy = false;
       if (!r || !r.ok) {
         _status((ai ? 'Fee' : 'Stake') + ' failed: ' + _esc((r && r.reason) || 'error') + ' — match cancelled', true);
         _cmd('stakecancel');
         return;
       }
       _cmd('stake', null, tier, r.tx, null, window.BlocksWager.address(), null, _myRef(), useAi);   // įėjimo tx + 🎁 referrer'is (+🤖 aiPlay) → serveris verifikuoja+bind'ina
+      _stakePaidAt = Date.now(); _stakePaidKey = key;   // 🛡 nuo šiol 25 s to paties fee nebepriimam
       _status('⛓️ ' + (ai ? 'Fee' : 'Stake') + ' sent - verifying…' + (useAi ? '<br><span style="font-size:8px;opacity:.7;">🤖 your AI will play this match</span>' : ''), true);
+    }).catch(function (e) {
+      /* Anksčiau `pay()` atmetimas (žaidėjas paspaudė Reject) nebuvo gaudomas: `_status` likdavo
+         kaboti „confirm in your wallet…“, o serveris laukdavo statymo iki laikmačio. */
+      _stakeBusy = false;
+      console.warn('[BLOCKS] mokėjimas nutrūko:', e);
+      _status('❌ Payment cancelled — match cancelled.', true);
+      try { _cmd('stakecancel'); } catch (_) {}
     });
   }
 
@@ -1463,7 +1495,14 @@
   //   (payAndPlay → treasury, player-signed → PoD), payout NĖRA: laimi +1★ / pralaimi −½★ (TAS PATS
   //   reitingas kaip PvP). Mokama pay-on-accept stiliumi: serveris paprašo stake_now{ai:true} → _doStake(t,true).
   //   Reikia piniginės (be jos nėra nei reitingo, nei fee) — net kai wager serveris negyvas (free dev režimas).
+  var _aiStartedAt = 0;   // 🛡 kol vsAI sesija kuriasi, antro kambario (ir antro fee) nekuriam
   function _doAiRanked() {
+    if (_aiStartedAt && Date.now() - _aiStartedAt < 90000) {
+      console.warn('[BLOCKS] vs AI paspaudimas praleistas — sesija jau kuriama');
+      _status('⏳ Your vs AI match is already starting — hang on.', true);
+      return;
+    }
+    _aiStartedAt = Date.now();
     var a = _walletAddr();
     if (!a) { _ensureWallet(_doAiRanked); return; }   // 📱 mobile: WC deep-link + poll, tada kartojam
     _bgActive = true; _myRole = 'ai'; _podClaimedMatch = false; _ensureGame();
@@ -1775,6 +1814,7 @@
       if (_panel) _showHostStatus();
     } else if (st === 'lobby') {
       _hostInvite = null;                            // host nebelaukia → nuvalom įsimintą linką
+      _aiStartedAt = 0;                              // 🛡 mačas baigėsi/atsiaukta → vs AI mygtukas vl laisvas
       _hideChallenge(); _podClaimedMatch = false;   // nauja rungtynė → leidžiam kitą PoD claim (dedup lieka doneToday)
       if (_gameOn) { _bgActive = false; _myRole = ''; _hideGame(); _teardownGame(); _openPanel(); }   // grįžo po rungtynių → lobis
       else if (_myRole === 'guest') {
