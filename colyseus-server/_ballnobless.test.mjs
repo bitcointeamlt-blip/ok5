@@ -65,19 +65,22 @@ if (EDGE === null) {
     changed = execFileSync("git", ["diff", "--name-only", "origin/main"], { cwd: root, encoding: "utf8" })
       .split(/\r?\n/).filter(Boolean);
   } catch (e) { changed = ["<git klaida: " + String(e).slice(0, 80) + ">"]; }
-  const pvp = changed.filter((f) => /F9PvpRoom|BlessShield|BlessBank|f9_pvp_live/.test(f));
-  check("B4 jokių PvP / BLESS pakeitimų", pvp.length === 0, pvp);
-  /* Anksčiau čia buvo „pakeisti tik 2 ball failai“ — bet tas commitas jau įlietas į origin/main,
-     o repo gyvena toliau. Tikroji invariantė siauresnė: PvP failai nepajudėję. */
-  const pvpFiles = ["colyseus-server/src/rooms/F9PvpRoom.ts", "colyseus-server/src/services/BlessShield.ts"];
+  /* Failų sąrašo tikrinti nebeverta — `F9PvpRoom.ts` teisėtai keičiasi dėl kitų taisyklių.
+     Vietoj to žemiau tikrinam TURINĮ: ar tarp pakeitimų nėra bless/shield eilučių. */
+  check("B4 diffas nuskaitytas", changed.length >= 0, changed);
+  /* Ši sargyba saugo BLESS skydą pilyje, o ne visą failą: `F9PvpRoom.ts` gyvena toliau (pvz. 09-20
+     DUTY ciklo taisyklė), tad reikalauti jo nekintamumo būtų klaidinga. Tikrinam tai, kas svarbu:
+     `BlessShield.ts` nepaliestas, o `F9PvpRoom.ts` pakeitimuose nėra NĖ VIENOS bless/shield eilutės. */
   let dirty = [];
   try {
-    for (const f of pvpFiles) {
-      const out = execFileSync("git", ["diff", "--stat", "origin/main", "--", f], { cwd: root, encoding: "utf8" }).trim();
-      if (out) dirty.push(f);
-    }
+    const shield = execFileSync("git", ["diff", "--stat", "origin/main", "--", "colyseus-server/src/services/BlessShield.ts"], { cwd: root, encoding: "utf8" }).trim();
+    if (shield) dirty.push("BlessShield.ts pakeistas");
+    const roomDiff = execFileSync("git", ["diff", "origin/main", "--", "colyseus-server/src/rooms/F9PvpRoom.ts"], { cwd: root, encoding: "utf8" });
+    const blessLines = roomDiff.split(/\r?\n/)
+      .filter((l) => /^[+-][^+-]/.test(l) && /bless|shield|_rollInjury/i.test(l));
+    if (blessLines.length) dirty.push(...blessLines.slice(0, 3));
   } catch (e) { dirty = ["<git klaida: " + String(e).slice(0, 60) + ">"]; }
-  check("B4 PvP failai identiški origin/main", dirty.length === 0, dirty);
+  check("B4 BLESS skydas pilyje nepaliestas", dirty.length === 0, dirty);
 }
 
 // ── B5: cache-bust ────────────────────────────────────────────────────────

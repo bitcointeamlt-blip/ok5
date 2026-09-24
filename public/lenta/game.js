@@ -11730,8 +11730,8 @@ function _f9MinePanelStats() {
         '<div style="height:9px;background:#0a0c18;border:1px solid #2a3a44;border-radius:5px;overflow:hidden;"><div style="height:100%;width:' + (_duPct * 100).toFixed(1) + '%;background:' + _duBar + ';transition:width .3s;"></div></div>' +
         '<div style="margin-top:6px;font-size:8px;line-height:1.5;color:' + (_over ? '#d4a85c' : '#6a7a8a') + ';">' +
           (_over
-            ? '⚠️ <b>Cycle is full.</b> 🟢 DUTY keeps mining anyway — but switch to 🛡 SAFE and mining pauses at once, until <b>one PvP match</b> (either side 50% casualties).'
-            : '🟢 Mining freely — but this cycle fills here too. At <b>' + step + '</b> mined, 🛡 SAFE would pause until one PvP match.') +
+            ? '⚠️ <b>Cycle is full</b> from earlier 🛡 SAFE mining — DUTY does not add to it. 🟢 DUTY keeps mining anyway, but switch to 🛡 SAFE and mining pauses at once, until <b>one PvP match</b> (either side 50% casualties).'
+            : '🟢 Mining freely — no cycle limit, and this bar <b>stays put</b> while you are on DUTY. Switch to 🛡 SAFE and it starts filling again, pausing at <b>' + step + '</b> until one PvP match.') +
           ' Raiders who beat you take 35% of un-withdrawn RONKE: 30% to them, 5% burned.</div>' +
       '</div>';
   }

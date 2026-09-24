@@ -2297,7 +2297,10 @@ export class F9PvpRoom extends Room<F9State> {
     // 🛡 S-M5 (CRIT-1 fix): early-return TIK jei SĖKMINGAI užkrauta. Jei _injured egzistuoja bet _hospLoaded=false
     //   (poison: _rollInjury/_recordDeath sukūrė įrašą kol load'as failino) → NEpraleidžiam, bandom vėl užkrauti
     //   (merge žemiau), kad persistas atsigautų (kitaip būtų amžinai užblokuotas visai kambario sesijai).
-    if (this._injured.has(addr) && this._hospLoaded.has(addr)) { this._pruneHosp(addr); return this._injured.get(addr)!.q; }
+    /* 🔄 Anksciau cia buvo besalyginis return — kambarys DB nebeskaitydavo NIEKADA. Dabar tik kol
+     *    kesas sviezias; pasenus krentam zemyn ir perskaitom is naujo (merge logika zemiau islieka). */
+    const _fresh = Date.now() - (this._hospAt.get(addr) || 0) < F9PvpRoom.HOSP_TTL_MS;
+    if (this._injured.has(addr) && this._hospLoaded.has(addr) && _fresh) { this._pruneHosp(addr); return this._injured.get(addr)!.q; }
     let q: InjuredUnit[] = [], starts: number[] = [], durs: number[] = [], lvl = 1;
     try {
       const b = await loadBaseBuildings(addr);   // 🛡 S-M5: meta klaidą (ne null) esant DB triktimi
@@ -2328,6 +2331,8 @@ export class F9PvpRoom extends Room<F9State> {
     this._hospFillBeds(hh, Date.now());
     this._injured.set(addr, hh);
     this._hospLoaded.add(addr);   // ✅ SĖKMINGAI užkrauta → nuo dabar _persistInjured leidžiamas
+    this._hospAt.set(addr, Date.now());
+    this._hospSee(addr, hh.q.map((e) => String(e.tokenId)));   // 🏥 šie tokenai ŠIAM kambariui žinomi
     this._pruneHosp(addr);
     return this._injured.get(addr)!.q;
   }
@@ -2507,6 +2512,22 @@ export class F9PvpRoom extends Room<F9State> {
       await saveBaseBuildings(addr, b);
     }).catch(() => {});
   }
+  /* 🏥🔄 LIGONINES KESO ATNAUJINIMAS (2026-09-21, zaidejo pranesimas: „ka tik padariau reida,
+   * turejau tureti 10 unitu ligonineje, bet visi lauke ir 0 ligonineje").
+   * Raidas vyksta GYNEJO kambaryje — ten puoliko suzalojimai irasomi ir issaugomi. Bet puoliko
+   * SAVO pilies kambarys tuo metu tebeturi pries raida uzkrauta kopija, o `_loadInjured` ja grazina
+   * amzinai (`if (_injured.has && _hospLoaded.has) return`) — DB nebeskaitomas niekada.
+   * Todel griztant namo panele rodo 0, nors DB zino apie 10. Blogiau: `_persistInjured` rase
+   * `b.injured = q` AKLAI, tad tas tuscias kesas galejo tuos 10 dar ir istrinti.
+   * Dabar: kesas turi TTL, o irasymas daro SAJUNGA su DB (kaip `deadUnits` jau seniai daro). */
+  private static readonly HOSP_TTL_MS = 15000;
+  private _hospAt = new Map<string, number>();     // addr -> kada paskutini karta skaityta is DB
+  private _hospSeen = new Map<string, Set<string>>();   // tokenId, apie kuriuos SIS kambarys zino (uzkrauti is DB + ka tik suzaloti)
+  private _hospSee(addr: string, ids: string[]) {
+    const set = this._hospSeen.get(addr) || new Set<string>();
+    for (const t of ids) if (t) set.add(String(t));
+    this._hospSeen.set(addr, set);
+  }
   private _hospRetry = new Set<string>();   // 🛡 CRIT-1: in-flight poison-recovery reload guard (nespam'inam load'ų)
   private _persistInjured(addr: string) {
     addr = (addr || "").trim().toLowerCase();
@@ -2525,8 +2546,16 @@ export class F9PvpRoom extends Room<F9State> {
     const h = this._injured.get(addr);
     const q = (h?.q || []).slice(), starts = (h?.starts || []).slice(), durs = (h?.durs || []).slice();
     const dead = Array.from(this._deadOwn(addr));   // snapshot ČIA (eilė vykdys vėliau) — TIK savi (globalūs guli registre)
+    const seen = this._hospSeen.get(addr) || new Set<string>();
     void this._buildingsOp(addr, (b) => {
-      b.injured = q;
+      /* 🏥 SĄJUNGA (ne overwrite): DB eilutės, apie kurias ŠIS kambarys nieko nežino, PALIEKAMOS.
+       * Be to lygiagretus kambarys (pvz. puoliko namai) savo senu kešu užtrindavo raide įrašytus
+       * sužalojimus. Išgydytus šis kambarys išima normaliai, nes jie yra `seen` aibėje. */
+      const _dbInj = Array.isArray(b.injured) ? b.injured : [];
+      const _mine = new Set(q.map((e: any) => String(e.tokenId)));
+      const _keep = _dbInj.filter((e: any) => { const t = String(e?.tokenId || ""); return t && !_mine.has(t) && !seen.has(t); });
+      if (_keep.length) console.log(`[F9PvpRoom] 🏥 persist merge: ${_keep.length} svetimo kambario sužalojimų išsaugota (${addr.slice(0, 10)}…)`);
+      b.injured = [...q, ..._keep];
       b.hospStart = starts[0] || 0;   // legacy laukas (seni klientai/migracija)
       b.hospStarts = starts;
       (b as any).hospDurs = durs;   // per-lovos trukmės (v3.1)
@@ -2655,6 +2684,7 @@ export class F9PvpRoom extends Room<F9State> {
     if (!h) { h = { q: [], starts: [], durs: [], lvl: (this._home && addr === this._ownerAddr ? (this._buildings.hospLevel || 1) : 1) }; this._injured.set(addr, h); }
     h.q = h.q.filter((i) => i.tokenId !== u.tokenId);
     h.q.push({ tokenId: u.tokenId, utype: u.utype, level: u.level || 0 });
+    this._hospSee(addr, [String(u.tokenId)]);   // 🏥 šių nebelaikom „svetimais" — juos sužalojo ŠIS kambarys
     this._hospPrioritize(addr, h);       // ⚔️ naujas (deko) sužalotasis lenkia senus išrotuotus eilėje
     this._hospFillBeds(h, Date.now());   // laisva lova → gydymas iškart (greičiausia lova pirmiau)
     this._persistInjured(addr);
@@ -2950,7 +2980,13 @@ export class F9PvpRoom extends Room<F9State> {
       gain = Math.min(gain, Math.max(0, Math.max(_cap, c.mpot || 0) - (c.mpot || 0)));                // 💰 balanso backstop
       if (gain > 0) {
         c.mpot = Math.round(((c.mpot || 0) + gain) * 1000) / 1000;
-        c.mmined = Math.round(((c.mmined || 0) + gain) * 1000) / 1000;
+        /* 🟢 DUTY CIKLO NEJUDINA (user 2026-09-20: „jeigu duty — kasi kiek nori, tave pulti gali, o SAFE
+         * ciklas nejuda; įjungus SAFE ciklas juda, užsipildo 200/200 ir kasimas sustoja").
+         * Iki šiol `mmined` augo ABIEM režimais (nuo `eebb5fdf`, 08-20), tad naktį pakasęs DUTY režimu
+         * žaidėjas, grįžęs į SAFE, būdavo UŽRAKINTAS iš karto — nors už DUTY jau sumokėjo tuo, kad buvo
+         * puolamas. Vartai nuo to nenukenčia: SAFE kasimas skalę pildo kaip pildęs, tad 200/200 + grįžimas
+         * į SAFE vis tiek reikalauja PvP. Pasikeičia tik tai, kad DUTY nebe „suvalgo" SAFE limito iš anksto. */
+        if (c.duty === "safe") c.mmined = Math.round(((c.mmined || 0) + gain) * 1000) / 1000;
       }
     }
     // ⛏️🗡 CIKLO VARTAI: iškasus 200 (mmined) → kasimas sustoja iki kvalifikuoto PvP mūšio. TIK 🛡SAFE.
