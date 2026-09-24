@@ -55,14 +55,22 @@ async function _read(addr: string): Promise<Row> {
   const { data, error } = await c.from("f9_bases").select("buildings").eq("ronin_address", _key(addr)).maybeSingle();
   if (error) throw new Error("[F9BurnAuth] read: " + (error.message || "db error"));
   const b = (data as any)?.buildings || {};
-  const auths = (Array.isArray(b.auths) ? b.auths : []).map(_sane).filter(Boolean) as BurnAuth[];
+  /* 🧹 2026-09-24: PASIBAIGĘ parašai išmetami jau skaitant. Be šito baseinas prisipildydavo negyvų
+   * įrašų ir `burnAuthAdd` nutraukdavo ciklą ties `MAX_POOL`, tad NAUJAS parašas nebeįtilpdavo.
+   * Žaidėjui tai atrodė kaip nesibaigianti kilpa: spaudi SIGN → piniginė → „sumirksi" → vėl prašo SIGN,
+   * ir DUTY (bei raidas) lieka amžinai užrakintas. Gyvas atvejis: 24 parašai, iš jų 20 pasibaigę. */
+  const _now = Math.floor(Date.now() / 1000);
+  const auths = ((Array.isArray(b.auths) ? b.auths : []).map(_sane).filter(Boolean) as BurnAuth[])
+    .filter((a) => a.deadline > _now);
   const used = (Array.isArray(b.used) ? b.used : []).map((x: any) => String(x));
   return { auths, used, ver: Number(b.ver) || 0, fresh: !data, noVer: b.ver == null };
 }
 
 async function _write(addr: string, r: Row): Promise<boolean> {
   const c = sb(); if (!c) return true;
-  const body = { auths: r.auths.slice(0, MAX_POOL), used: r.used.slice(-200), ver: (r.ver || 0) + 1 };
+  /* ⚠️ `slice(0, MAX_POOL)` laikė SENIAUSIUS — perpildžius baseiną būtent NAUJAS parašas ir iškrisdavo.
+   * Imam paskutinius: naujausi (ilgiausiai galiosiantys) lieka. */
+  const body = { auths: r.auths.slice(-MAX_POOL), used: r.used.slice(-200), ver: (r.ver || 0) + 1 };
   if (r.fresh) {
     const { error } = await c.from("f9_bases").insert({ ronin_address: _key(addr), units: [], buildings: body, updated_at: new Date().toISOString() });
     if (!error) return true;
@@ -118,7 +126,10 @@ export async function burnAuthAdd(addr: string, list: any[]): Promise<number> {
       const usedSet = new Set(row.used);
       for (const f of fresh) {
         if (have.has(f.nonce) || usedSet.has(f.nonce)) continue;   // dublis / jau sunaudotas
-        if (row.auths.length >= MAX_POOL) break;
+        /* Baseinas pilnas: anksčiau čia buvo `break` ir naujas parašas tiesiog dingdavo BE ŽODŽIO
+         * (žaidėjui — begalinė SIGN kilpa). Pasibaigusių `_read` jau nebeatiduoda, tad jei vis tiek
+         * pilna — išstumiam SENIAUSIĄ, nes naujas galioja ilgiau ir dengia dabartinį deką. */
+        if (row.auths.length >= MAX_POOL) row.auths.shift();
         row.auths.push(f); have.add(f.nonce);
       }
       if (await _write(a, row)) {
