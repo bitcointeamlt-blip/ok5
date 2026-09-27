@@ -5,7 +5,7 @@
   const W3 = window.RPWeb3;
   if (!W3) return;
 
-  let game = null, root = null, els = {}, mode = 'start', lastRun = null, boardFrom = 'start', boardMetric = 'total';   // 🏆 S3: vienintelis reitingas — bendras score
+  let game = null, root = null, els = {}, mode = 'start', lastRun = null, boardFrom = 'start', boardMetric = 'score';   // 🏆 S5: reitingas — GERIAUSIAS VIENAS ŽAIDIMAS
   let boardSeason = 0;   // 🏁 kurio sezono lentelė rodoma (0 = dar nenustatyta → dabartinis)
 
   const CSS = `
@@ -112,7 +112,7 @@
   .rp-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
   .rp-raddr{color:#bfe8ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;}
   .rp-prize{font-size:12.5px;color:#8fb0c8;display:flex;gap:4px;flex-wrap:wrap;align-items:center;}
-  .rp-prize .pz-u{color:#cfe0ff;} .rp-prize .pz-c{color:#e6a6cf;} .rp-prize .pz-b{color:#dfe6f4;} .rp-prize .pz-sep{color:#4a5468;}
+  .rp-prize .pz-u{color:#cfe0ff;} .rp-prize .pz-c{color:#e6a6cf;} .rp-prize .pz-b{color:#dfe6f4;} .rp-prize .pz-r{color:#f3c63a;} .rp-prize .pz-sep{color:#4a5468;}
   .rp-ronke{color:#8fffb0;font-weight:bold;}
   .rp-rscore{flex:0 0 auto;color:#7be0ff;font-weight:bold;font-size:17px;text-align:right;}
   /* tuščias prizinis slotas (dar nėra žaidėjo) — prizas matomas, tik pritemdytas */
@@ -317,14 +317,15 @@
    * Rizika: su naujomis piniginėmis tai farminama (vienas žaidimas = 15 BLESS, o paros norma
    * pagal Ronke Score yra tik 3–20). Jei prireiks — ribą deda `PRIZE_MID`-tipo konstanta arba
    * minimalus score slenkstis, o ne juostų perrašymas. */
-  const PRIZE_TOP = 3, PRIZE_MID = 10;
-  function seasonPrize(rank) {
-    const u = rank === 1 ? 5 : rank === 2 ? 3 : rank === 3 ? 2 : rank <= PRIZE_MID ? 1 : 0;
-    const bl = rank <= PRIZE_TOP ? 50 : rank <= PRIZE_MID ? 25 : 15;
-    return { u: u, bl: bl };
-  }
+  /* 🏆 S5 prizai (2026-09-27, user): 69 000 RONKE, TIK top 10 — 10 000 už pirmą vietą, toliau
+   * mažėjant. Sumos surašytos tiesiogiai, o ne skaičiuojamos formule, kad lentelė būtų tiksliai ta,
+   * kurią user patvirtino, ir kad suma visada sutaptų su paskelbtu fondu. */
+  const PRIZE_MID = 10;
+  const RONKE_PRIZES = [10000, 9000, 8000, 7500, 7000, 6500, 6000, 5500, 5000, 4500];   // Σ = 69 000
+  function seasonPrize(rank) { return { ronke: RONKE_PRIZES[rank - 1] || 0 }; }
   // Kiekvieno prizo trumpas paaiškinimas — hover (title) + paspaudus popup (žr. showInfo).
   const PRIZE_INFO = {
+    ronke: { name: '🪙 RONKE', text: 'Season prize pool: 69,000 RONKE shared by the top 10. Ranked by your best single game — one great run beats a hundred short ones.' },
     units: { name: '⚔ Units', text: 'NFT units used in Age of Ronke and Ronke Saga.' },
     bless: { name: '🪽 BLESS', text: 'BLESS is used in Age of Ronke: it shields a unit from death in battle, and instantly heals an injured unit in your hospital.' },
   };
@@ -333,10 +334,9 @@
     return '<span class="pz-tok ' + cls + '" data-info="' + key + '" title="' + t + '">' + label + '</span>';
   }
   function prizeCells(rank) {
-    const p = seasonPrize(rank), out = [];
-    if (p.u) out.push(pzTok('units', '⚔ ' + p.u + ' Unit' + (p.u > 1 ? 's' : ''), 'pz-u'));
-    if (p.bl) out.push(pzTok('bless', '🪽 ' + p.bl + ' BLESS', 'pz-b'));
-    return out.join('<span class="pz-sep"> · </span>');
+    const p = seasonPrize(rank);
+    if (!p.ronke) return '';
+    return pzTok('ronke', '🪙 ' + p.ronke.toLocaleString('en-US') + ' RONKE', 'pz-r');
   }
   function num(n) { return (n || 0).toLocaleString('en-US'); }
 
@@ -354,11 +354,11 @@
     if (!boardSeason) boardSeason = curSeasonId();
     updateTabs(); renderSeasons();
     els.board.innerHTML = '<div class="rp-empty">loading…</div>';
-    const byTotal = true;   // 🏆 S3: reitingas VISADA pagal bendrą score
+    const byTotal = false;  // 🏆 S5: reitingas VISADA pagal geriausią VIENĄ žaidimą (`score`)
     const top = await W3.loadTop(SLOTS, byTotal, boardSeason);
     const me = (W3.getAddress() || '').toLowerCase();
     // Prizai matomi kiekvienoj eilutėj, tad atskiros legendos nereikia.
-    let html = '<div class="rp-poolline">Σ Ranked by your <b>TOTAL score</b> — every game adds up</div>';
+    let html = '<div class="rp-poolline">🏆 Ranked by your <b>BEST single game</b> · 69,000 RONKE shared by the top 10</div>';
     // VISADA renderinam 20 slotų: užpildyti žaidėjais + tušti „— open —" (prizai matomi kiekvienoj vietoj).
     for (let i = 0; i < SLOTS; i++) {
       const rank = i + 1;

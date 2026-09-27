@@ -285,7 +285,13 @@
     /* 📅 09-13 (user): SEZONAS 4 — tos pačios taisyklės ir prizai kaip S3 (vienas lyderbordas pagal
      * ASMENINĮ BENDRĄ score; BLESS juostos 50/25/15 + unitai visam top 10; RONKE fondo nėra).
      * Startas BE TARPO — tiksliai ten, kur baigėsi S3 (Rugs. 13 08:00 UTC), trukmė 14 parų. */
-    { id: 4, key: 'rp4_', name: 'SEASON 4', start: Date.UTC(2026, 8, 13, 8, 0, 0), end: Date.UTC(2026, 8, 27, 8, 0, 0) },
+    { id: 4, key: 'rp4_', name: 'SEASON 4', start: Date.UTC(2026, 8, 13, 8, 0, 0), end: Date.UTC(2026, 8, 27, 8, 0, 0), closed: true },
+    /* 📅 09-27 (user): SEZONAS 5 — DVI taisyklės pasikeitė:
+     *   • reitingas = GERIAUSIAS VIENAS ŽAIDIMAS (`score`), nebe visų žaidimų suma. Rodomas
+     *     aukščiausias vieno žaidimo rezultatas, tad daug trumpų žaidimų nebekaupia vietos;
+     *   • prizai = 69 000 RONKE, dalijami TIK top 10 (10 000 už pirmą, toliau mažėjant).
+     * Startas BE TARPO ten, kur baigėsi S4 (Rugs. 27 08:00 UTC), trukmė 14 parų. */
+    { id: 5, key: 'rp5_', name: 'SEASON 5', start: Date.UTC(2026, 8, 27, 8, 0, 0), end: Date.UTC(2026, 9, 11, 8, 0, 0) },
   ];
   // Serverio laikas (Supabase `Date`) jei žinom, kitaip vietinis fallback → veikia net be tinklo.
   function nowMs() { return hasServerTime() ? serverNow() : Date.now(); }
