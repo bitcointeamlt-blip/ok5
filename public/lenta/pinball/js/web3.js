@@ -274,24 +274,29 @@
   //   užklausą → atsilikęs telefono laikrodis apeina lock'ą ir leidžia žaisti UŽDARYTĄ sezoną, o tada
   //   rezultatas nukeliauja į SENO sezono prefiksą ir sugadina archyvą. Uždaryta = uždaryta visur.
   //   Naują sezoną pradėti: pridedi eilutę BE `closed`; seni lieka `closed: true`.
+  /* ⚠️ Taisyklės gyvena SEZONE, ne globaliai. Lyderbordą galima peržiūrėti atgal, tad seno sezono
+   * lentelė privalo rodyti TUOS prizus ir TĄ reitingą, kurie tada ir galiojo — kitaip 09-27 S5
+   * pakeitimas S4 lentelėje pradėjo rodyti 69 000 RONKE, kurių ten niekada nebuvo.
+   *   metric: 'total' = asmeninių taškų suma · 'score' = geriausias vienas žaidimas
+   *   prizes: 'bless' = BLESS juostos + unitai · 'ronke' = RONKE fondas top 10 */
   const SEASONS = [
-    { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0), closed: true },
-    { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0), closed: true },
+    { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0), closed: true, metric: 'total', prizes: 'bless' },
+    { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0), closed: true, metric: 'total', prizes: 'bless' },
     /* 🏆 SEZONAS 3 (2026-08-30, user): vienas lyderbordas — ASMENINIS BENDRAS score (visų žaidimų suma),
      * jokio „geriausio vieno žaidimo" reitingo. Prizai — BLESS juostomis + unitai VISAM top 10.
      * RONKE fondo nebėra. Trukmė — 14 parų (08-30 user; buvo 7). */
     /* 📅 08-30 (user): sezonas 14 parų vietoj 7 — Rugp. 30 08:00 → Rugs. 13 08:00 UTC. */
-    { id: 3, key: 'rp3_', name: 'SEASON 3', start: Date.UTC(2026, 7, 30, 8, 0, 0), end: Date.UTC(2026, 8, 13, 8, 0, 0), closed: true },
+    { id: 3, key: 'rp3_', name: 'SEASON 3', start: Date.UTC(2026, 7, 30, 8, 0, 0), end: Date.UTC(2026, 8, 13, 8, 0, 0), closed: true, metric: 'total', prizes: 'bless' },
     /* 📅 09-13 (user): SEZONAS 4 — tos pačios taisyklės ir prizai kaip S3 (vienas lyderbordas pagal
      * ASMENINĮ BENDRĄ score; BLESS juostos 50/25/15 + unitai visam top 10; RONKE fondo nėra).
      * Startas BE TARPO — tiksliai ten, kur baigėsi S3 (Rugs. 13 08:00 UTC), trukmė 14 parų. */
-    { id: 4, key: 'rp4_', name: 'SEASON 4', start: Date.UTC(2026, 8, 13, 8, 0, 0), end: Date.UTC(2026, 8, 27, 8, 0, 0), closed: true },
+    { id: 4, key: 'rp4_', name: 'SEASON 4', start: Date.UTC(2026, 8, 13, 8, 0, 0), end: Date.UTC(2026, 8, 27, 8, 0, 0), closed: true, metric: 'total', prizes: 'bless' },
     /* 📅 09-27 (user): SEZONAS 5 — DVI taisyklės pasikeitė:
      *   • reitingas = GERIAUSIAS VIENAS ŽAIDIMAS (`score`), nebe visų žaidimų suma. Rodomas
      *     aukščiausias vieno žaidimo rezultatas, tad daug trumpų žaidimų nebekaupia vietos;
      *   • prizai = 69 000 RONKE, dalijami TIK top 10 (10 000 už pirmą, toliau mažėjant).
      * Startas BE TARPO ten, kur baigėsi S4 (Rugs. 27 08:00 UTC), trukmė 14 parų. */
-    { id: 5, key: 'rp5_', name: 'SEASON 5', start: Date.UTC(2026, 8, 27, 8, 0, 0), end: Date.UTC(2026, 9, 11, 8, 0, 0) },
+    { id: 5, key: 'rp5_', name: 'SEASON 5', start: Date.UTC(2026, 8, 27, 8, 0, 0), end: Date.UTC(2026, 9, 11, 8, 0, 0), metric: 'score', prizes: 'ronke' },
   ];
   // Serverio laikas (Supabase `Date`) jei žinom, kitaip vietinis fallback → veikia net be tinklo.
   function nowMs() { return hasServerTime() ? serverNow() : Date.now(); }
@@ -305,7 +310,7 @@
   // Sezonų sąrašas UI pasirinkimui (naujausias pirmas) + „live" žyma.
   function seasonList() {
     const cur = currentSeason();
-    return SEASONS.slice().reverse().map((s) => ({ id: s.id, name: s.name, start: s.start, end: s.end,
+    return SEASONS.slice().reverse().map((s) => ({ id: s.id, name: s.name, start: s.start, end: s.end, metric: s.metric, prizes: s.prizes,
       live: s.id === cur.id && !seasonEnded(s), ended: seasonEnded(s) }));
   }
   function seasonEnd() { return currentSeason().end; }
