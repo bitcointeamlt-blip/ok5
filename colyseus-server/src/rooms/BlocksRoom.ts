@@ -1,4 +1,4 @@
-import { Room, Client, updateLobby } from "@colyseus/core";
+import { Room, Client, ServerError, updateLobby } from "@colyseus/core";
 import { BlocksState, BlocksPlayer } from "../schema/BlocksState";
 import { loadGameLib, GameLib } from "../blocks/loadGame";
 import { StakeService } from "../services/StakeService";
@@ -249,6 +249,20 @@ export class BlocksRoom extends Room<BlocksState> {
   }
 
   onJoin(client: Client, options?: any) {
+    /* 🚦 09-28 PASKUTINIS SKYDAS: į kambarį, kuriame JAU vyksta derybos/mokėjimas/mačas, pašalinis
+     * nebeįleidžiamas. Be šito įėjęs žmogus paimdavo laisvą pusę (dažnai p1 ⇒ ŠEIMININKO) ir iškart
+     * gaudavo svetimą „X wants to play" arba net `stake_now` už mačą, kurio neprašė.
+     * IŠIMTIS — savas grįžtantis žaidėjas: mokant piniginės app'e WS miršta, ir klientas grįžta per
+     * `joinById` (žr. tetris/js/main.js „MOBILE RESUME"). Jį atpažįstam pagal piniginės adresą. */
+    if (this.state.phase !== "lobby") {
+      const addr = String((options && options.addr) || "").trim().toLowerCase();
+      const returning = !!addr && (this._addrOf.p1 === addr || this._addrOf.p2 === addr);
+      if (!returning) {
+        console.warn(`[BLOCKS] 🚦 join atmestas — kambarys fazėje „${this.state.phase}" (room=${this.roomId}, addr=${addr.slice(0, 10) || "—"})`);
+        throw new ServerError(4213, "match_in_progress");
+      }
+      console.log(`[BLOCKS] ↩️ grįžta savas žaidėjas ${addr.slice(0, 10)}… į fazę „${this.state.phase}" (room=${this.roomId})`);
+    }
     const taken = new Set<string>();
     this.state.players.forEach((p) => taken.add(p.side));
     const side: Side = taken.has("p1") ? "p2" : "p1";
@@ -369,8 +383,29 @@ export class BlocksRoom extends Room<BlocksState> {
         this.autoDispose = false;   // tuščias kambarys nemiršta, kol žaidėjas piniginės app'e
         console.log(`[BLOCKS] 📱 žaidėjas atsijungė ${this.state.phase} fazėje — laukiam sugrįžtant (room=${this.roomId})`);
       }
+      const wasHost = client.sessionId === this.hostSession;
       try { this.state.players.delete(client.sessionId); } catch {}
-      if (client.sessionId === this.hostSession) this.hostSession = "";
+      if (wasHost) this.hostSession = "";
+      /* 👑 09-28 (žaidėjo pranešimas: „spaudžiu JOIN, o man iškrinta lentelė su VISAI KITU adresu —
+       * ir tą lentelę turėjo gauti jis, ne aš").
+       * Kaltininkas: `onJoin` pusę dalina taip — `taken.has("p1") ? "p2" : "p1"`, o p1 AUTOMATIŠKAI
+       * tampa šeimininku. Jei šeimininkas išėjo, o svečias dar sėdi kambaryje (ir kambarys tebėra
+       * lobio sąraše, nes `clients === 1`), tai kitas žmogus, paspaudęs JOIN, gauna LAISVĄ p1 ⇒
+       * TYLIAI tampa to kambario šeimininku. Jo klientas prisijungęs siunčia `ready`, o likęs svečias
+       * `ready` jau buvo atsiuntęs ⇒ `_openChallenge()` ir „X wants to play" iškrinta NAUJOKUI,
+       * su TREČIO žmogaus adresu. Paspaudus ACCEPT jis dar ir moka už mačą, kurio neprašė.
+       * Taisymas: kambarys egzistuoja dėl savo šeimininko. Jam išėjus lobby/challenge fazėje
+       * paleidžiam likusį svečią atgal į lobį ir kambarį uždarom. Statymo/pasiruošimo fazių
+       * NELIEČIAM — ten galioja mobilios piniginės grace langas (žr. aukščiau). */
+      if (wasHost && (this.state.phase === "lobby" || this.state.phase === "challenge") && !this.vsAI) {
+        const rest = this.clients.filter((c) => c.sessionId !== client.sessionId);
+        if (rest.length) {
+          console.log(`[BLOCKS] 👑 šeimininkas išėjo (${this.state.phase}) — paleidžiam ${rest.length} likusį(-ius) į lobį, room=${this.roomId}`);
+          rest.forEach((c) => { try { c.send("declined", { timeout: false, hostLeft: true }); } catch (_) {} });
+        }
+        this._unlist("šeimininkas išėjo");
+        setTimeout(() => { try { void this.disconnect(); } catch (_) {} }, 800);
+      }
       return;
     }
     // ⏱️ COUNTDOWN — mačas dar NEPRASIDĖJO: nė viena figūra nenukrito, tad išėjimas čia NĖRA
@@ -441,6 +476,11 @@ export class BlocksRoom extends Room<BlocksState> {
   // Prisijungė svečias → klausiam HOST'o, ar nori žaisti (jis gali būti „fone", žaidžia pilyje).
   private _openChallenge() {
     this.state.phase = "challenge";
+    /* 🚪 09-28: nuo iššūkio momento kambarys NEBE „laisvas mačas". Iki šiol `_unlist` įvykdavo tik
+     * `_beginPrep`, tad kambarys lobyje kabėdavo per visą derybų ir MOKĖJIMO langą (iki 4 min).
+     * Kliento filtras sąraše yra tik `clients === 1`, tad vienam iš dviejų nukritus (mobilus išeina
+     * į piniginės app'ą) kambarys vėl atrodydavo laisvas ir į jį įkrisdavo trečias žmogus. */
+    this._unlist("iššūkis vyksta");
     let hostName = "Player", guestName = "Player";
     this.state.players.forEach((pl, sid) => {
       if (pl.side === "p1") hostName = pl.name; else guestName = pl.name;
@@ -708,6 +748,8 @@ export class BlocksRoom extends Room<BlocksState> {
       if (c.sessionId !== this.hostSession) c.send("declined", { timeout });
     });
     this.state.phase = "lobby";
+    // derybos baigėsi be mačo → šeimininkas vėl laukia, kambarys grįžta į sąrašą (tuščias NEgrįžta, žr. _relist)
+    this._relist("iššūkis atmestas / neatsakytas");
   }
 
   private _onClear(client: Client, m: any) {
@@ -1073,6 +1115,11 @@ export class BlocksRoom extends Room<BlocksState> {
   }
   private _relist(why: string) {
     if (this._neverList) return;
+    /* 👻 TUŠČIO kambario į lobį NEGRĄŽINAM. `_abortWager` relist'ina PRIEŠ `await _refundBoth()`
+     * (on-chain verify su pakartojimais — 15 s ir daugiau), tad nutrūkęs mačas visą tą laiką kabėjo
+     * sąraše kaip laisvas, nors jame nieko nebėra; įėjęs žmogus gaudavo LAISVĄ p1 ir tyliai tapdavo
+     * to negyvo kambario šeimininku. */
+    if (!this.clients.length) { console.log(`[BLOCKS] 👻 _relist praleistas — kambarys tuščias (${why}) room=${this.roomId}`); return; }
     if (this._listed) return;
     this._listed = true;
     try { void this.setPrivate(false); } catch (_) {}

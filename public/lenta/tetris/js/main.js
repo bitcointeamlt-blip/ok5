@@ -54,6 +54,7 @@
         } catch (_) {}
       };
       var _lastRep = '';
+      var _stakeRoom = '';   // 🎯 kambarys, kuris atsiuntė `stake_now` — TEN ir privalo nukeliauti sumokėtas tx
       global.setInterval(function () {
         var rep = match.state + '|' + (match.roomCode || '') + '|' + (match._private ? 1 : 0) + '|' + (match._challenger || '') + '|' + ((global.NET && global.NET.roomId) || '');
         if (rep === _lastRep) return;
@@ -64,7 +65,13 @@
         global.NET.on('challenge', function (p) { _post({ state: 'challenge', opponent: (p && p.opponent) || '' }); });
         global.NET.on('declined', function () { _post({ state: 'lobby' }); });
         /* 🧱💰 wager įvykiai tėvui (panelė moka/rodo statusą/prizą) */
-        global.NET.on('stake_now', function (p) { _post({ stakeNow: true, stakeTier: (p && p.tier) || 0, stakeAI: !!(p && p.ai), stakeAiFee: (p && p.aiFee) || 0 }); });   // pay-on-accept: laikas mokėti (🤖 ai=true → vsAI fee; aiFee → PvP „AI už mane" priedas)
+        /* 🎯 09-28: isimenam, KURIS kambarys paprase mokejimo. Piniginej zaidejas praleidzia 10-60 s,
+         * per tuos jis (ar panele) gali atsidurti KITAME kambaryje — tada `stake` nukeliaudavo ne ten,
+         * kur sumoketa: serveris statymo negaudavo, macas neivykdavo, RONKE dingdavo (zr. `cmd:'stake'`). */
+        global.NET.on('stake_now', function (p) {
+          _stakeRoom = global.NET.roomId || '';
+          _post({ stakeNow: true, stakeTier: (p && p.tier) || 0, stakeAI: !!(p && p.ai), stakeAiFee: (p && p.aiFee) || 0 });
+        });   // pay-on-accept: laikas mokėti (🤖 ai=true → vsAI fee; aiFee → PvP „AI už mane" priedas)
         global.NET.on('wager_verify', function (p) { _post({ wagerVerify: true, wagerTier: (p && p.tier) || 0 }); });
         global.NET.on('settle', function (p) { var won = !!(p && p.winner && match.mySide && p.winner === match.mySide); _post({ wagerPrize: won ? (p.prize || 0) : 0, wagerPot: (p && p.pot) || 0 }); });
         global.NET.on('wager_abort', function (p) { _post({ wagerAbort: (p && p.reason) || 'error' }); });
@@ -100,9 +107,20 @@
           /* 📱 MOBILE RESUME: mokant piniginės APP'E naršyklė fone → WS miręs. Jei taip —
            * prisijungiam prie TO PATIES kambario (joinById) ir tada siunčiam stake tx. */
           var _sendStake = function () { try { global.NET.send('stake', { tx: d.mid, addr: d.addr, ref: d.ref || '', aiPlay: !!d.aiPlay }); } catch (_) {} };
-          if (global.NET.status === 'open') _sendStake();
+          /* 🎯 09-28 (zaidejo pranesimas: „paspaudziu kad noriu zaisti su vienu adresu, paskui ismeta
+           * kita popupa… nuskaiciuoja RONKE ir macas neivyksta"; grandineje: 09-28 16:43 sumoketa 69,
+           * `blocksentry_` NEBUVO, jokio maco, jokio grazinimo).
+           * Kol zaidejas pinigineje, klientas galejo atsidurti KITAME kambaryje (iskritusi „OPPONENT
+           * FOUND" lentele + lobio sarasas dirba lygiagreciai). Tada `stake` nukeliaudavo ne i ta
+           * kambari, kuris prase mokejimo — ten jis tiesiog ignoruojamas, o sumoketi pinigai lieka niekur.
+           * DABAR: tx visada siunciam i kambari, kuris atsiunte `stake_now`; jei esam kitur — pirma
+           * grizatam i ji per joinById. */
+          var _want = _stakeRoom || '';
+          var _here = (global.NET.status === 'open') ? (global.NET.roomId || '') : '';
+          if (_here && (!_want || _here === _want)) _sendStake();
           else {
-            var _rid = global.NET.roomId;
+            var _rid = _want || global.NET.roomId;
+            if (_want && _here && _here !== _want) console.warn('[stake] esam kitame kambaryje (' + _here + '), o mokejimo prase ' + _want + ' — grizatam');
             /* 🛟 08-20: anksčiau čia buvo TYLI spraga — jei `roomId` prarastas arba rejoin krito,
              * statymas taip ir likdavo neišsiųstas, nors tx JAU apmokėtas. Serveris nieko negaudavo,
              * mačas neįvykdavo, o pinigai likdavo treasury. Dabar kiekvienas nesėkmės kelias
@@ -127,9 +145,18 @@
             }
           }
         }
-        else if (d.cmd === 'stakecancel') { try { global.NET.send('stake_cancel', {}); } catch (_) {} }
+        /* Atsaukima siunciam TIK i ta pati kambari, kuris prase mokejimo — kitaip „atsisakau moketi"
+         * nutrauktu visai kita (galbut jau mokama) maca ir gadintu svetima statyma. */
+        else if (d.cmd === 'stakecancel') {
+          var _cancelHere = (global.NET.roomId || '');
+          if (!_stakeRoom || _cancelHere === _stakeRoom) { try { global.NET.send('stake_cancel', {}); } catch (_) {} }
+          else console.warn('[stake] stake_cancel praleistas — esam ne tame kambaryje (' + _cancelHere + ' vs ' + _stakeRoom + ')');
+        }
         else if (d.cmd === 'xpassign') { try { global.NET.send('xp_assign', { unit: d.mid }); } catch (_) {} }   // 🎖️ pool -> unitas
-        else if (d.cmd === 'lobby') { match.state = 'lobby'; match.roomCode = ''; match.inviteUrl = ''; match._startLobbyPoll(); }
+        /* 👻 „stop hosting" = ISEINAM is kambario. Iki 09-27 cia buvo tik busenos perjungimas, o
+         * socket'as likdavo kaboti: kambarys toliau rodesi lobyje kaip laisvas, ir i ji ieje zaidejai
+         * gaudavo „challenge", kuris iskrisdavo virs JAU VYKSTANCIO kito maco (zr. net.js `_leaveCurrent`). */
+        else if (d.cmd === 'lobby') { try { global.NET.disconnect(); } catch (_) {} match.state = 'lobby'; match.roomCode = ''; match.inviteUrl = ''; match._startLobbyPoll(); }
       });
     }
 

@@ -73,6 +73,10 @@
    * Samoningas isejimas (`NET.disconnect`) ir pasibaiges macas (`gameover`) persijungimo NEPRADEDA. */
   var RC_TRIES = 20, RC_GAP_MS = 1200;
   var _client = null, _rtoken = '', _rcTimer = null;
+  /* Jungties KARTA: kiekviena nauja `connect`/`_leaveCurrent` ja padidina. Persijungimo bandymas,
+   * pradetas dar senojoje kartoje, savo rezultato NEBEPRIRISA (kitaip veluojantis `reconnect` galetu
+   * perrasyti `NET._room` jau po to, kai zaidejas prisijunge kitur). */
+  var _gen = 0;
   NET._bye = false;    // samoningai isejom
   NET._over = false;   // macas jau baigtas (gameover) — grizti nebera kur
 
@@ -95,16 +99,44 @@
     } catch (_) {}
   }
 
+  /* 👻 KAMBARIAI-VAIDUOKLIAI (2026-09-27, zaidejo ekrano nuotrauka: „OPPONENT FOUND" iskrito per
+   * pati maca, ACCEPT/DECLINE nieko nedare, „screen stuck", macas pralaimetas).
+   * Priezastis: `NET.connect` kurdavo NAUJA `Colyseus.Client`, o SENAS kambarys likdavo prijungtas
+   * (serveryje `pingInterval:0` — mirusiu sedyniu jis nemato). Tas paliktas kambarys toliau siusdavo
+   * zinutes i TA PATI `NET` bus'a: kai i ji ieidavo kitas zaidejas ir paspausdavo READY, serveris
+   * siusdavo `challenge` SENAJAM session'ui, o `match.js` be jokios salygos darydavo
+   * `state = 'challenge'` ⇒ vykstantis macas sustodavo (`_updateNet`: `if (state !== 'playing') return`).
+   * ACCEPT/DECLINE eidavo per `NET.send` i NAUJAJI kambari, o serverio `_cancelChallenge` „declined"
+   * siuncia tik SVECIUI ⇒ langas neuzsidarydavo niekada.
+   * Du sluoksniai: (a) `_leaveCurrent()` pries kiekviena nauja jungti; (b) kiekviena zinute
+   * filtruojam pagal kambari — kas ne `NET._room`, tas i UI nebepatenka net jei `leave` nepavyko. */
   function _wire(room) {
     NET._room = room; NET.status = 'open';
     NET.sessionId = room.sessionId; NET.roomId = room.roomId;
     if (room.reconnectionToken) _rtoken = room.reconnectionToken;
     room.onMessage('*', function (type, payload) {
+      if (NET._room !== room) { console.warn('[net] 👻 zinute is palikto kambario ignoruota:', type); return; }
       if (type === 'gameover') NET._over = true;
       NET.emit(type, payload);
     });
-    room.onLeave(function (code) { _onLeave(code); });
-    room.onError && room.onError(function (code, message) { NET.status = 'error'; NET.emit('error', { code: code, message: message }); });
+    room.onLeave(function (code) { if (NET._room !== room) return; _onLeave(code); });
+    room.onError && room.onError(function (code, message) {
+      if (NET._room !== room) return;
+      NET.status = 'error'; NET.emit('error', { code: code, message: message });
+    });
+  }
+
+  /* Paliekam dabartini kambari TYLIAI: `NET._room` nunulinam PIRMA, tad to kambario `onLeave`
+   * (ir bet kokia veluojanti zinute) jau nebepasiekia UI — jokio netikro „close" per persijungima. */
+  function _leaveCurrent() {
+    _gen++;
+    var old = NET._room;
+    if (!old) return;
+    NET._room = null;
+    _rtoken = '';                                  // senas reconnect token'as nebegalioja naujam kambariui
+    if (_rcTimer) { clearTimeout(_rcTimer); _rcTimer = null; }
+    try { old.leave(true); } catch (_) {}
+    console.log('[net] 🚪 palikom senaji kambari', old.roomId);
   }
 
   function _onLeave(code) {
@@ -120,20 +152,23 @@
     _reconnect(0);
   }
 
-  function _reconnect(attempt) {
-    if (NET._bye || NET._over) return;
+  function _reconnect(attempt, gen) {
+    if (gen == null) gen = _gen;
+    if (NET._bye || NET._over || gen !== _gen) return;
     _client.reconnect(_rtoken).then(function (room) {
+      if (gen !== _gen) { try { room.leave(true); } catch (_) {} return; }   // zaidejas per ta laika jau kitame kambaryje
       _wire(room);
       _rcBanner('');
       console.log('[net] ✅ persijungta po ' + (attempt + 1) + ' bandymo(-u)');
       NET.emit('reopen', { sessionId: room.sessionId, roomId: room.roomId, attempts: attempt + 1 });
     }).catch(function () {
+      if (gen !== _gen) return;                      // jau kitas kambarys — sito nebetesiam
       if (attempt + 1 >= RC_TRIES) {
         console.warn('[net] ❌ persijungti nepavyko per ' + Math.round(RC_TRIES * RC_GAP_MS / 1000) + ' s');
         _rcBanner('');
         NET.status = 'closed'; NET.emit('close', { code: 'reconnect_failed' }); return;
       }
-      _rcTimer = setTimeout(function () { _reconnect(attempt + 1); }, RC_GAP_MS);
+      _rcTimer = setTimeout(function () { _reconnect(attempt + 1, gen); }, RC_GAP_MS);
     });
   }
 
@@ -150,6 +185,7 @@
 
     // colyseus
     if (!global.Colyseus || !global.Colyseus.Client) { console.error('[net] Colyseus client neįkeltas (../colyseus.browser.js)'); NET.status = 'error'; return Promise.reject('no_colyseus'); }
+    _leaveCurrent();   // 👻 nauja jungtis = seno kambario NEBELAIKOM (kitaip jis lieka lobyje ir sviedzia „challenge" per maca)
     var client = new global.Colyseus.Client(_endpoint());
     _client = client; NET._bye = false; NET._over = false;
     if (_rcTimer) { clearTimeout(_rcTimer); _rcTimer = null; }

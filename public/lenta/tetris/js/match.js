@@ -687,8 +687,17 @@
       self._wagerAbort = (p && p.reason) || 'stake_error';
       self.state = 'lobby'; self.roomCode = ''; self.inviteUrl = ''; self._private = false; self._startLobbyPoll();
     });
-    /* 🥊 CHALLENGE: prisijungė svečias → HOST'ui „do you want to play?" (jis gali būti fone, žaisti pilyje). */
-    NET.on('challenge', function (p) { self._challenger = (p && p.opponent) || 'Player'; self.state = 'challenge'; self._stopLobbyPoll(); });
+    /* 🥊 CHALLENGE: prisijungė svečias → HOST'ui „do you want to play?" (jis gali būti fone, žaidžia pilyje). */
+    NET.on('challenge', function (p) {
+      /* 👻 ANTRAS SKYDAS (09-27): iššūkis NIEKADA neturi nutraukti jau vykstančio mačo. Net jei dėl
+       * kokios nors priežasties žinutė ateitų netinkamu metu, `state='challenge'` sustabdytų lentą
+       * (`_updateNet`: `if (state !== 'playing') return`) ir žaidėjas pralaimėtų žiūrėdamas į langą. */
+      if (self.state === 'playing' || self.state === 'countdown' || self.state === 'prep') {
+        console.warn('[match] 👻 challenge atėjo mačo metu — ignoruojam');
+        return;
+      }
+      self._challenger = (p && p.opponent) || 'Player'; self.state = 'challenge'; self._stopLobbyPoll();
+    });
     /* SVEČIAS: laukia, kol host'as apsispręs. */
     NET.on('await', function (p) { self._hostName = (p && p.host) || 'Player'; self.state = 'awaiting'; });
     /* SVEČIAS: host atmetė / timeout → paliekam kambarį, grįžtam į lobį. */
