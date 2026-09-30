@@ -63,7 +63,7 @@ console.log("\nA1 · pilnas bokštas iššauna 3 kartus ir nutyla");
   check("tuščias bokštas nebešaudo dar 20 s", shots.filter((s) => s.y === 5).length === 3, { n: shots.length });
 }
 
-console.log("\nA2 · gynėjas užtaiso: 6 s, kol šalia jo unitas");
+console.log("\nA2 · gynėjas užtaiso: 7 s, kol šalia jo unitas");
 {
   const { t1, guard, shots, step, reload } = makeRoom();
   step(12000);
@@ -71,14 +71,15 @@ console.log("\nA2 · gynėjas užtaiso: 6 s, kol šalia jo unitas");
   const r = reload("DEF", t1);
   check("atsakymas tower_reload_ok, near=true", r && r.type === "tower_reload_ok" && r.e.near === true, r);
   check("progresas prasidėjo", t1.reload >= 1 && !t1.reloadWait, { reload: t1.reload, wait: t1.reloadWait });
-  step(3000);
-  check("po 3 s ~50 %", t1.reload >= 45 && t1.reload <= 55 && t1.ammo === 0, { reload: t1.reload, ammo: t1.ammo });
-  step(2800);
-  check("po 5,8 s dar tuščias", t1.ammo === 0, { ammo: t1.ammo, reload: t1.reload });
+  check("laikrodukas rodo 7 s", t1.reloadLeft === 7, { left: t1.reloadLeft });
+  step(3500);
+  check("po 3,5 s ~50 % ir laikrodukas 4", t1.reload >= 45 && t1.reload <= 55 && t1.ammo === 0 && t1.reloadLeft === 4, { reload: t1.reload, ammo: t1.ammo, left: t1.reloadLeft });
+  step(3200);
+  check("po 6,7 s dar tuščias", t1.ammo === 0, { ammo: t1.ammo, reload: t1.reload });
   const before = shots.length;
-  step(300);
+  step(400);
   // užsitaisęs bokštas IŠKART šauna į šalia stovintį priešą → 3 − 1
-  check("po ~6,1 s pilnas ir vėl šauna, progresas nulis", t1.ammo === 2 && shots.length === before + 1 && t1.reload === 0, { ammo: t1.ammo, reload: t1.reload });
+  check("po ~7,1 s pilnas, progresas ir laikrodukas nuliai", t1.ammo === 2 && shots.length === before + 1 && t1.reload === 0 && t1.reloadLeft === 0, { ammo: t1.ammo, reload: t1.reload, left: t1.reloadLeft });
 }
 
 console.log("\nA3 · be unito šalia užtaisymas stovi");
@@ -91,13 +92,13 @@ console.log("\nA3 · be unito šalia užtaisymas stovi");
   check("po 10 s be unito — vis dar tuščias, reloadWait", t1.ammo === 0 && t1.reloadWait === true && t1.reload <= 2, { ammo: t1.ammo, wait: t1.reloadWait, reload: t1.reload });
   guard.x = 34.5; guard.y = 5.5;
   step(3000);
-  check("unitas atbėgo → vyksta (~50 %), nebelaukia", t1.reloadWait === false && t1.reload >= 45 && t1.ammo === 0, { r: t1.reload, w: t1.reloadWait });
+  check("unitas atbėgo → vyksta (3 s iš 7 ≈ 43 %), nebelaukia", t1.reloadWait === false && t1.reload >= 38 && t1.reload <= 48 && t1.ammo === 0, { r: t1.reload, w: t1.reloadWait });
   guard.x = 40;
   step(4000);
   check("unitas nuėjo → sustojo ties ~50 %", t1.reloadWait === true && t1.reload <= 55 && t1.ammo === 0, { r: t1.reload, w: t1.reloadWait });
   guard.x = 34.5;
-  step(3100);
-  check("grįžo → baigė (iš viso 6 s šalia) ir vėl šauna", t1.ammo === 2 && t1.reload === 0, { ammo: t1.ammo, r: t1.reload });
+  step(4100);
+  check("grįžo → baigė (iš viso 7 s šalia) ir vėl šauna", t1.ammo === 2 && t1.reload === 0, { ammo: t1.ammo, r: t1.reload });
 }
 
 console.log("\nA4 · kas ir kada gali užtaisyti");
@@ -120,19 +121,24 @@ console.log("\nA4 · kas ir kada gali užtaisyti");
   check("po mūšio (phase≠playing) — atmesta", r && r.type === "tower_reload_fail", r);
 }
 
-console.log("\nA5 · savininkas offline → visi kartu kas 12 s");
+console.log("\nA5 · savininkas offline → visi kartu kas 15 s");
 {
   const { room, t1, t2, shots, step } = makeRoom();
   room.clients.splice(room.clients.findIndex((c) => c.sessionId === "DEF"), 1);   // gynėjas atsijungė
   step(11000);
   check("per 11 s abu iššovė po 3 ir tušti", t1.ammo === 0 && t2.ammo === 0 && shots.length === 6, { a1: t1.ammo, a2: t2.ammo, n: shots.length });
-  check("rodomas bendras progresas", t1.reload > 80 && t1.reload === t2.reload, { r1: t1.reload, r2: t2.reload });
+  check("rodomas bendras progresas", t1.reload > 60 && t1.reload === t2.reload, { r1: t1.reload, r2: t2.reload });
+  check("laikrodukas bendras ir dar bėga", t1.reloadLeft === t2.reloadLeft && t1.reloadLeft >= 1 && t1.reloadLeft <= 5, { l1: t1.reloadLeft, l2: t2.reloadLeft });
+  step(3000);
+  check("po 14 s DAR tušti (15 s ciklas)", t1.ammo === 0 && t2.ammo === 0, { a1: t1.ammo, a2: t2.ammo });
   step(1100);
-  check("ties 12 s abu vėl pilni (be unitų šalia)", t1.ammo >= 2 && t2.ammo >= 2, { a1: t1.ammo, a2: t2.ammo });
-  step(23800);
-  check("iki 35,9 s: pradžia + 2 pripildymai = lygiai 18 šūvių", shots.length === 18, { n: shots.length });
-  step(200);
-  check("ties 36 s trečias pripildymas — vėl šauna", shots.length === 20, { n: shots.length });
+  check("ties 15 s abu vėl pilni (be unitų šalia)", t1.ammo >= 2 && t2.ammo >= 2, { a1: t1.ammo, a2: t2.ammo });
+  // pripildytas bokštas tą pačią akimirką iššauna → vėl ammo<3, tad laikrodukas persuka į KITĄ 15 s ciklą
+  check("po pripildymo laikrodukas persuka į kitą ciklą", t1.reloadLeft >= 14 && t1.reloadLeft <= 15, { left: t1.reloadLeft });
+  step(29800);
+  check("iki 44,9 s: pradžia + 2 pripildymai = lygiai 18 šūvių", shots.length === 18, { n: shots.length });
+  step(300);
+  check("ties 45 s trečias pripildymas — vėl šauna", shots.length === 20, { n: shots.length });
 }
 
 console.log("\nA6 · ramybė → visi pilni");

@@ -194,8 +194,8 @@ const TOWER_FIRE_MS = 380;  // delsa nuo charge iki hit (sutampa su bolt FX)
  *   GYVAS gynėjas: paspaudžia bokštą → 6 s, bet laikas bėga TIK kol prie bokšto stovi jo unitas.
  *   Savininkas offline (AI gina): VISI bokštai prisipildo kartu kas 12 s. Ramybėje — visada pilni. */
 const TOWER_AMMO = 3;
-const TOWER_RELOAD_MS = 6000;
-const TOWER_AUTO_RELOAD_MS = 12000;
+const TOWER_RELOAD_MS = 7000;
+const TOWER_AUTO_RELOAD_MS = 15000;
 const TOWER_RELOAD_NEAR = 2.5;   // cells — kaip arti bokšto turi stovėti gynėjo unitas
 
 // 🏠 NAMŲ GARNIZONO rikiuotė (user 07-03): 2 eilės po 6, IŠKART PO BARAKAIS (client barakai cx 64.78,
@@ -4655,10 +4655,14 @@ export class F9PvpRoom extends Room<F9State> {
     return near;
   }
 
-  private _towerSet(t: F9Wall, ammo: number, reload: number, wait: boolean) {
+  private _towerSet(t: F9Wall, ammo: number, reload: number, wait: boolean, leftMs = 0) {
     if (t.ammo !== ammo) t.ammo = ammo;          // keičiam tik kai skiriasi — kitaip patch'ai kas tiką
     if (t.reload !== reload) t.reload = reload;
     if (t.reloadWait !== wait) t.reloadWait = wait;
+    /* 🗼⏱ Laikrodukas virš bokšto: siunčiam LIKUSIAS SEKUNDES (ne procentus), tad patch'as išeina
+     * tik kartą per sekundę, o klientui nereikia žinoti, kuri trukmė galioja (7 s rankinis vs 15 s auto). */
+    const left = leftMs > 0 ? Math.min(255, Math.ceil(leftMs / 1000)) : 0;
+    if (t.reloadLeft !== left) t.reloadLeft = left;
   }
 
   private _updateTowerAmmo(dt: number) {
@@ -4677,7 +4681,7 @@ export class F9PvpRoom extends Room<F9State> {
       for (const t of this._walls) {
         if (!t.tower) continue;
         if (left <= 0) this._towerSet(t, TOWER_AMMO, 0, false);
-        else this._towerSet(t, t.ammo, t.ammo < TOWER_AMMO ? pct : 0, false);
+        else this._towerSet(t, t.ammo, t.ammo < TOWER_AMMO ? pct : 0, false, t.ammo < TOWER_AMMO ? left : 0);
       }
       return;
     }
@@ -4699,11 +4703,11 @@ export class F9PvpRoom extends Room<F9State> {
         continue;
       }
       this._towerReload[key] = nl;
-      this._towerSet(t, t.ammo, Math.min(99, Math.max(1, Math.floor(100 * (1 - nl / TOWER_RELOAD_MS)))), !near);
+      this._towerSet(t, t.ammo, Math.min(99, Math.max(1, Math.floor(100 * (1 - nl / TOWER_RELOAD_MS)))), !near, nl);
     }
   }
 
-  // 🗼🔋 Gynėjas paspaudė bokštą mūšio metu → pradedam 6 s užtaisymą (laikas bėga tik su jo unitu šalia).
+  // 🗼🔋 Gynėjas paspaudė bokštą mūšio metu → pradedam 7 s užtaisymą (laikas bėga tik su jo unitu šalia).
   private _handleTowerReload(client: Client, msg: any) {
     const fail = (reason: string) => { try { client.send("tower_reload_fail", { reason }); } catch (_) {} };
     if (this.state.phase !== "playing" || !this._ownerSid || client.sessionId !== this._ownerSid) return fail("not_defender");
@@ -4717,7 +4721,7 @@ export class F9PvpRoom extends Room<F9State> {
     // be unito šalia užtaisymas vis tiek pradedamas, bet stovi (reloadWait), kol unitas atbėgs
     const near = this._towerFriendNear(t);
     this._towerReload[key] = TOWER_RELOAD_MS;
-    this._towerSet(t, t.ammo, 1, !near);
+    this._towerSet(t, t.ammo, 1, !near, TOWER_RELOAD_MS);
     try { client.send("tower_reload_ok", { x, y, near }); } catch (_) {}
   }
 

@@ -53,6 +53,7 @@ export class F9Wall extends Schema {
   @type("uint8") ammo: number = 0;           // 🗼🔋 bokšto likę šūviai (0..3) — visi mato taškiukus
   @type("uint8") reload: number = 0;         // 🗼🔋 užtaisymo progresas 1..99 % (0 = neužtaisoma)
   @type("boolean") reloadWait: boolean = false;   // 🗼🔋 užtaisymas stovi: prie bokšto nėra gynėjo unito
+  @type("uint8") reloadLeft: number = 0;          // 🗼⏱ likusios SEKUNDĖS iki užtaisymo (0 = neužtaisoma) — virš bokšto rodomas laikrodukas
 }
 
 export class F9State extends Schema {

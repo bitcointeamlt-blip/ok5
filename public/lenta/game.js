@@ -9325,8 +9325,10 @@ function _f9DrawZipTowerSeg(seg, now) {
   _f9DrawTowerAmmo(seg, cx, zby, now);
 }
 
-// 🗼🔋 Mūšio metu virš bokšto 3 taškiukai = likę šūviai (mato visi). Užtaisant — juostelė po taškiukais;
-//    gintarinė ir mirksi, kai užtaisymas stovi (šalia nėra gynėjo unito). Gynėjui tuščias bokštas rodo RELOAD.
+// 🗼🔋 Mūšio metu virš bokšto 3 taškiukai = likę šūviai (mato visi). Užtaisant — laikrodukas VIRŠ taškiukų
+//    (likusios sekundės, „pop" kas sekundę); gintarinis ir mirksi, kai užtaisymas stovi (šalia nėra gynėjo
+//    unito). Gynėjui tuščias bokštas rodo RELOAD. Po taškiukais nieko nebepiešiam — ten sienos HP juosta.
+const _f9TowerTick = Object.create(null);   // "x,y" → {v, at} — kad skaičiaus pasikeitimą matytųsi animacija
 function _f9DrawTowerAmmo(seg, cx, zby, now) {
   if (seg.ammo == null) return;   // senas serveris be šovinių
   const live = window.F9PvpLive;
@@ -9341,19 +9343,48 @@ function _f9DrawTowerAmmo(seg, cx, zby, now) {
     ctx.lineWidth = 1.2; ctx.strokeStyle = full ? 'rgba(10,40,45,0.9)' : 'rgba(160,160,160,0.7)'; ctx.stroke();
   }
   const defending = typeof live.towerDefending === 'function' && live.towerDefending();
-  if (seg.reload > 0) {
+  /* 🗼⏱ 09-30 (user: „cd juostelė užsideda ant hp bar — jeigu būtų viršuj laikrodukas, būtų aiškiau"):
+   * užtaisymo juostelė piešėsi PO taškiukais, tiesiai ant sienos HP juostos. Dabar laikas rodomas
+   * VIRŠ bokšto — likusios sekundės iš serverio (`reloadLeft`), su „pop" animacija kas kartą, kai
+   * skaičius pasikeičia. Juostelė paliekama TIK kaip atsarga senam serveriui (be `reloadLeft`). */
+  const left = seg.reloadLeft | 0;
+  if (seg.reloadLeft == null && seg.reload > 0) {
     const bw = gap * (n - 1) + r * 2, bx = cx - bw / 2, by = y + r + 2.5;
-    const blink = seg.reloadWait ? 0.45 + 0.55 * (Math.sin(now * 0.012) + 1) * 0.5 : 1;
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(bx - 1, by - 1, bw + 2, 5);
-    ctx.globalAlpha = blink; ctx.fillStyle = seg.reloadWait ? '#ffcf5c' : '#78e6eb';
-    ctx.fillRect(bx, by, bw * Math.min(1, seg.reload / 100), 3); ctx.globalAlpha = 1;
+    ctx.fillStyle = seg.reloadWait ? '#ffcf5c' : '#78e6eb';
+    ctx.fillRect(bx, by, bw * Math.min(1, seg.reload / 100), 3);
   }
-  const label = !defending ? '' : (seg.reload > 0 && seg.reloadWait) ? 'NEED UNIT' : (!seg.reload && seg.ammo === 0) ? 'RELOAD' : '';
+  let clockTop = y - r - 3;
+  if (left > 0) {
+    const key = seg.x + ',' + seg.y;
+    const st = _f9TowerTick[key] || (_f9TowerTick[key] = { v: left, at: now });
+    if (st.v !== left) { st.v = left; st.at = now; }
+    const k = Math.min(1, (now - st.at) / 220);
+    const pop = 1 + 0.42 * (1 - k) * (1 - k);                       // skaičius „pašoka" pasikeitęs
+    const waiting = !!seg.reloadWait;
+    const blink = waiting ? 0.5 + 0.5 * (Math.sin(now * 0.012) + 1) * 0.5 : 1;
+    const rad = Math.max(7, C * 0.17), cy = y - r - rad - 2;
+    clockTop = cy - rad - 2;
+    ctx.save();
+    ctx.globalAlpha = blink;
+    ctx.translate(cx, cy); ctx.scale(pop, pop);
+    ctx.beginPath(); ctx.arc(0, 0, rad, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.66)'; ctx.fill();
+    ctx.lineWidth = 1.6; ctx.strokeStyle = waiting ? '#ffcf5c' : '#78e6eb'; ctx.stroke();
+    ctx.font = 'bold ' + Math.max(9, Math.round(C * 0.21)) + 'px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = waiting ? '#ffcf5c' : '#bdf4f7';
+    ctx.fillText(String(left), 0, Math.max(1, C * 0.012));
+    ctx.restore();
+  } else if (_f9TowerTick[seg.x + ',' + seg.y]) {
+    delete _f9TowerTick[seg.x + ',' + seg.y];
+  }
+  const label = !defending ? '' : (left > 0 && seg.reloadWait) ? 'NEED UNIT' : (!left && seg.ammo === 0) ? 'RELOAD' : '';
   if (label) {
     const pulse = 0.55 + 0.45 * (Math.sin(now * 0.008) + 1) * 0.5;
     ctx.font = 'bold ' + Math.max(9, Math.round(C * 0.22)) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.globalAlpha = pulse; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-    ctx.strokeText(label, cx, y - r - 3); ctx.fillStyle = '#ffcf5c'; ctx.fillText(label, cx, y - r - 3);
+    ctx.strokeText(label, cx, clockTop); ctx.fillStyle = '#ffcf5c'; ctx.fillText(label, cx, clockTop);
   }
   ctx.restore();
 }
