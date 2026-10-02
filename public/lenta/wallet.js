@@ -264,9 +264,22 @@
     return decodeAbiString(r);
   }
 
+  // 🖼️ 2026-10-02: metadata gyvena S3 kibire, kuris atsako 200, bet BE `access-control-allow-origin`,
+  //   tad naršyklė jo tiesiogiai nepaima — viskas rėmėsi viešais CORS proxy'ais. Tą dieną krito visi
+  //   trys iš karto (allorigins 522, codetabs 522, corsproxy.io 403) ir NFT liko be vardų bei paveikslėlių.
+  //   Dabar pirmas bandymas — MŪSŲ domeno kelias (`_redirects` persiunčia į tą patį S3), tad jokio CORS
+  //   ir jokios trečios šalies. Proxy'ai lieka tik kaip atsarga.
+  const _S3_META = /^https:\/\/ronkeverse\.s3\.us-east-2\.amazonaws\.com\/metadata\/ronkeverse_metadata\/(\d+)\/?$/;
+  function sameOriginMeta(url) {
+    const m = _S3_META.exec(String(url || ''));
+    return m ? '/lenta/nft-meta/' + m[1] : null;
+  }
+
   async function fetchViaProxies(url) {
-    // Try direct first, then cascade of CORS proxies.
+    // Mūsų domenas pirmas (jei tai Ronkeverse metadata), tada tiesiogiai, tada CORS proxy'ai.
+    const mine = sameOriginMeta(url);
     const attempts = [
+      ...(mine ? [{ name: 'same-origin', url: mine }] : []),
       { name: 'direct', url },
       { name: 'allorigins', url: 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url) },
       { name: 'codetabs', url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url) },

@@ -3,3 +3,9 @@
 # PewPewBarracks NFT metadata — proxy to Supabase edge function
 # Marketplace fetches /lenta/unit-meta/<tokenId> → returns dynamic JSON
 /lenta/unit-meta/:tokenId  https://rbkivemouxwcgrpzazxb.supabase.co/functions/v1/unit-metadata/:tokenId  200
+
+# Ronkeverse NFT metadata — the S3 bucket answers 200 but sends no CORS header, so the browser
+# could only reach it through public CORS proxies. On 2026-10-02 all three were down at once
+# (allorigins 522, codetabs 522, corsproxy.io 403) and every NFT lost its name and picture.
+# Same-origin proxy: no CORS involved at all, and no third party in the path.
+/lenta/nft-meta/:tokenId  https://ronkeverse.s3.us-east-2.amazonaws.com/metadata/ronkeverse_metadata/:tokenId  200
