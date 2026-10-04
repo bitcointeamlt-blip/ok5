@@ -5187,14 +5187,33 @@ export class F9PvpRoom extends Room<F9State> {
       const travel = Math.max(150, (dist / cps) * 1000);
       const dmg = this._rollDmg(st);
       this.broadcast("shot", { fromId: u.id, toId: shotId, utype: u.utype, fireMs: st.fireMs, durMs: Math.round(travel) });
+      const atkTeam = u.team, isShaman = u.utype === "shaman";
       this._schedule(this._simTime + st.fireMs + travel, () => {
         const t2 = this.state.units.get(shotId);
         const a2 = this.state.units.get(attackerId);
         if (!t2 || !t2.alive) return;
-        if (Math.random() < MISS_CHANCE) { this.broadcast("miss", { id: t2.id, x: t2.x, y: t2.y }); return; }
-        this._dealDmg(t2, dmg, a2 || undefined);
+        // 💥 shaman orbas sprogsta ir per miss (banga kliudo aplinkinius) — koordinatės PRIEŠ žalą (t2 gali kristi)
+        const bx = t2.x, by = t2.y;
+        if (Math.random() < MISS_CHANCE) this.broadcast("miss", { id: t2.id, x: t2.x, y: t2.y });
+        else this._dealDmg(t2, dmg, a2 || undefined);
+        if (isShaman) this._shamanSplash(bx, by, t2.id, atkTeam, a2 || undefined);
       });
     }
+  }
+
+  // 💥 SHAMAN sprogimo banga: Shaman_Explosion matomas spindulys ~1.1 celės (kliento sprite 2.8×CELL,
+  //   max kadras 51px/128) → iki 4 artimiausių KITŲ komandų unitų zonoje gauna po -1 (be miss/crit).
+  //   Pagrindinis taikinys (skip) jau gavo įprastą dmg.
+  private _shamanSplash(cx: number, cy: number, skipId: string, atkTeam: number, attacker?: F9Unit) {
+    const R = 1.1, MAX = 4, DMG = 1;
+    const hits: { e: F9Unit; d: number }[] = [];
+    this.state.units.forEach((e) => {
+      if (!e.alive || e.id === skipId || e.team === atkTeam) return;
+      const d = Math.max(Math.abs(e.x - cx), Math.abs(e.y - cy));
+      if (d <= R) hits.push({ e, d: Math.hypot(e.x - cx, e.y - cy) });   // zona = kvadratas, eilė = tikras atstumas
+    });
+    hits.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < hits.length && i < MAX; i++) this._dealDmg(hits[i].e, DMG, attacker);
   }
 
   private _rollDmg(st: UStat): number {

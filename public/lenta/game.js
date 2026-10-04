@@ -37726,6 +37726,7 @@ function drawShamanProjectiles() {
           // F9 PvE: radius hit (judantys priešai išslysta iš cell'o) + _f9DealDmg —
           // kills į _f9Stats, balansas pagal _F9_ALLY_ATTACK (be F11 scale/crit/block)
           const _f9Tgt = _f9FindEnemyNear(p.targetGx, p.targetGy, 0.95);
+          p._primary = _f9Tgt || null;
           if (_f9Tgt) _f9DealDmg(_f9Tgt, _dmgBase, null);
         } else {
           // Ally shaman → hero (friendly fire niekada nedaro), hostile enemy, red archer NPC
@@ -37757,6 +37758,7 @@ function drawShamanProjectiles() {
             _combatJuice(p.targetGx, p.targetGy, _dmg, _crr.isCrit, p.stack || 1, false);
           }
         }
+        _shamanBlastSplash(p);
       }
     }
   });
@@ -37772,6 +37774,43 @@ function drawShamanProjectiles() {
       }
     }
     S.shamanProjectiles.length = _w;
+  }
+}
+
+// Sprogimo banga: Shaman_Explosion piešiamas 2.8×CELL, matomas spindulys ~1.1 celės
+// (max kadras 51px iš 128) ⇒ apima 8 aplinkines celes. Pagrindinis taikinys gauna
+// įprastą dmg (aukščiau), iki 4 kitų tos pačios pusės unitų zonoje — po -1.
+// PvP: _f9DealDmg nieko nedaro — bangą skaičiuoja serveris (F9PvpRoom._shamanSplash).
+const _SHAM_SPLASH_R = 1.1, _SHAM_SPLASH_MAX = 4, _SHAM_SPLASH_DMG = 1;
+function _shamanBlastSplash(p) {
+  if (!S.units) return;
+  const _f9 = !p.shooterIsEnemy && S.floor === 9 && typeof _f9IsEnemy === 'function';
+  const _isVictim = p.shooterIsEnemy
+    ? (u => isFriendlyBarracksUnit(u))
+    : _f9 ? (u => u && u.alive && _f9IsEnemy(u))
+          : (u => isHostileAdventureEnemy(u));
+  const _hits = [];
+  for (const u of S.units) {
+    if (!u || !u.alive || u === p._primary || !_isVictim(u)) continue;
+    const ux = (_f9 && typeof u.rx === 'number') ? u.rx : u.x;
+    const uy = (_f9 && typeof u.ry === 'number') ? u.ry : u.y;
+    const d = Math.max(Math.abs(ux - p.targetGx), Math.abs(uy - p.targetGy));
+    // non-F9: pagrindinis taikinys stovi centrinėje celėje — jo antrą kartą nekabinam
+    if (!_f9 && d < 0.5) continue;
+    if (d <= _SHAM_SPLASH_R) _hits.push({ u, d: Math.hypot(ux - p.targetGx, uy - p.targetGy) });   // zona = kvadratas, eilė = tikras atstumas
+  }
+  _hits.sort((a, b) => a.d - b.d);
+  for (let i = 0; i < _hits.length && i < _SHAM_SPLASH_MAX; i++) {
+    const u = _hits[i].u;
+    if (_f9) { _f9DealDmg(u, _SHAM_SPLASH_DMG, null); continue; }
+    if (_skullIsBlocking(u)) { spawnDmgNumber(u.x, u.y, 'BLOCK', '#88ddff', 14, 'normal'); continue; }
+    u.hp = Math.max(0, (u.hp || 1) - _SHAM_SPLASH_DMG);
+    u.hitFlash = 1;
+    spawnDmgNumber(u.x, u.y, `-${_SHAM_SPLASH_DMG}`, '#e08aff', 15, 'normal');
+    if (u.hp <= 0) {
+      u.alive = false;
+      if (typeof spawnDeath === 'function') spawnDeath(u.x, u.y, u.color || '#cc30ff');
+    }
   }
 }
 
