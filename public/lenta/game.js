@@ -4454,8 +4454,10 @@ function _f9InstallDragHandlers() {
       const _dseg = _f9WallAt(_wmx / CELL - 0.5, _wmy / CELL - 0.5);
       if (_dseg && _dseg.tower) { _f9TowerDemolishModal(_dseg.y); return; }
     }
+    // 🛡 PvP kovoje pastatai neklikinami — klikas krenta į RTS valdymą (zip tower atskirai, click handler'yje).
+    const _bLock = _f9BuildingsLocked();
     // 🏰 click ant pilies → pasižymėjimas (toggle), swallow (be unit komandos). Kitur — nuimam pasižymėjimą.
-    if (window._f9CastleRect) {
+    if (!_bLock && window._f9CastleRect) {
       const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
       const _cr = window._f9CastleRect;
       if (_wx >= _cr.x0 && _wx <= _cr.x1 && _wy >= _cr.y0 && _wy <= _cr.y1) {
@@ -4466,7 +4468,7 @@ function _f9InstallDragHandlers() {
       }
     }
     // 🏚️ click ant barakų → pasižymėjimas (toggle); pasižymėjus barakus — nuimam pilies pasižymėjimą+panelę
-    if (window._f9BarracksRect) {
+    if (!_bLock && window._f9BarracksRect) {
       const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
       const _br = window._f9BarracksRect;
       if (_wx >= _br.x0 && _wx <= _br.x1 && _wy >= _br.y0 && _wy <= _br.y1) {
@@ -4479,7 +4481,7 @@ function _f9InstallDragHandlers() {
       }
     }
     // 📊 click ant global stats ženklo → openLeaderboard (tas pats kaip F10)
-    if (window._f9StatsRect) {
+    if (!_bLock && window._f9StatsRect) {
       const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
       const _sr = window._f9StatsRect;
       if (_wx >= _sr.x0 && _wx <= _sr.x1 && _wy >= _sr.y0 && _wy <= _sr.y1) {
@@ -4491,7 +4493,7 @@ function _f9InstallDragHandlers() {
       }
     }
     // 📋 click ant ADS stendo → atidaryti turinio (nuotraukos upload) popup
-    if (window._f9AdsRect) {
+    if (!_bLock && window._f9AdsRect) {
       const _wx = p.sx / _f9WorldZoom() + (S.cam ? S.cam.x : 0), _wy = p.sy / _f9WorldZoom() + (S.cam ? S.cam.y : 0);
       const _ar = window._f9AdsRect;
       if (_wx >= _ar.x0 && _wx <= _ar.x1 && _wy >= _ar.y0 && _wy <= _ar.y1) {
@@ -4528,6 +4530,8 @@ function _f9InstallDragHandlers() {
         window._f9StatsHover = !!(_sr && _hmx >= _sr.x0 && _hmx <= _sr.x1 && _hmy >= _sr.y0 && _hmy <= _sr.y1);
         const _adr = window._f9AdsRect;   // 📋 stendo hover (tightintas rect → matomas rėmas)
         window._f9AdsHover = !!(_adr && _hmx >= _adr.x0 && _hmx <= _adr.x1 && _hmy >= _adr.y0 && _hmy <= _adr.y1);
+        // 🛡 PvP kovoje — jokio pastatų hover rėmo (neklikinami)
+        if (_f9BuildingsLocked()) window._f9CastleHover = window._f9BarracksHover = window._f9StatsHover = window._f9AdsHover = false;
       } catch (_) { window._f9HoverWall = null; }
     } else if (window._f9HoverWall) { window._f9HoverWall = null; }
     // Solo info popup vilkimas
@@ -13074,6 +13078,14 @@ function _f9CastleOcclusion(u) {
     if (o === -1) res = -1;
   }
   return res;
+}
+// 🛡 PvP KOVOS metu (raidas arba lauke gyvų priešų) pastatai NEKLIKINAMI (user 10-06: „netyčia paspaudi —
+//   atsidaro meniu, kurio kovoje niekam nereikia"). Išimtis — zip tower (atskiras kelias, liečiamas nebus).
+function _f9BuildingsLocked() {
+  if (!window._f9pvpLive) return false;
+  if (window.__f9RaidActive) return true;
+  for (const u of (S.units || [])) { if (u && u.alive && typeof _f9IsEnemy === 'function' && _f9IsEnemy(u)) return true; }
+  return false;
 }
 // Ar pasaulio taškas (px,py world px) yra ant pastato (pilis/barakai)? → naudojam, kad click ant pastato
 // NEsiųstų move komandos pažymėtiems unitams (interakcija su pastatu turi pirmenybę prieš judėjimą).
@@ -43672,7 +43684,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       // 🏰/🏚️ click ant pilies/barakų → NEsiunčiam move (interakcija su pastatu turi pirmenybę; unitas lieka).
-      if (typeof _f9PointOnBuilding === 'function' && _f9PointOnBuilding(mx, my)) return;
+      if (!_f9BuildingsLocked() && typeof _f9PointOnBuilding === 'function' && _f9PointOnBuilding(mx, my)) return;
       // RTS feel: right-click empty ground = move command. No surprise manual swing/shoot.
       // SHIFT+RMB = waypoint eilė (komandos vykdomos paeiliui, BAR/SC2 pattern).
       if (e.shiftKey && typeof _f9QueueMoveCommand === 'function') {
