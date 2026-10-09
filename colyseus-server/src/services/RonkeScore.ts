@@ -1,5 +1,5 @@
 // 🏆⛏️ RONKE SCORE → kasimo lojalumo daugiklis (2026-08-13, user).
-//   Score šaltinis: ronke-analytics.vercel.app viešas API (be auth, dieninis snapshot 07:00 UTC).
+//   Score šaltinis: ronke-score-nine.vercel.app viešas API (buvo ronke-analytics.vercel.app) (be auth, dieninis snapshot 07:00 UTC).
 //   Idėja: Ronke Power = kovinė galia iš deko, Ronke Score = bendruomenės lojalumas (RONKE holding trukmė,
 //   diamond hands, NFT rarity) → premijuojam KASIMĄ, ne kovą (nedubliuoja Power, nekelia pay-to-win).
 //   Tier'ai pagal API `percentile` (pats normalizuojasi augant holderių populiacijai; user 08-13):
@@ -7,7 +7,8 @@
 //   🔑 FAIL-OPEN: API triktis / nėra score → ×1.0 (kasimas NIEKADA nelūžta dėl išorinio servizo).
 //   Sync accessor + fono refresh (kaip chainDeckCached) — _mineRateFrom yra sinchroninis.
 
-const API_BASE = process.env.RONKE_SCORE_API || "https://ronke-analytics.vercel.app/api/v1";
+// 2026-10-09: ronke-analytics.vercel.app išjungtas (402 DEPLOYMENT_DISABLED) → mūsų perimta kopija, tas pats API formatas.
+const API_BASE = process.env.RONKE_SCORE_API || "https://ronke-score-nine.vercel.app/api/v1";
 const TTL_MS = 60 * 60 * 1000;        // sėkmingo fetch kešas 1 h (duomenys vis tiek dieniniai)
 const FAIL_TTL_MS = 10 * 60 * 1000;   // nepavykusio fetch kešas 10 min (nespamminam mirusio API)
 

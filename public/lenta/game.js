@@ -89,7 +89,13 @@ function initThreeJS() {
   t3d.scene.add(dirLight);
 
   t3d.clock = new THREE.Clock();
+}
 
+// boss01.glb is 17 MB and only the floor-3 adventure boss uses it, so it is fetched the first
+// time that boss is drawn (drawBoss01 shows its spinner meanwhile), not by every visitor at load.
+function loadBoss01Model() {
+  if (t3d.boss01Loading || !window.THREE || !t3d.scene) return;
+  t3d.boss01Loading = true;
   if (window.THREE.GLTFLoader) {
     const loader = new THREE.GLTFLoader();
     loader.load('boss01.glb', (gltf) => {
@@ -40169,6 +40175,7 @@ function drawEnemyNullIdol(cx, cy, u, alpha) {
 
 function drawBoss01(cx, cy, u, alpha) {
   if (!t3d.ready || !t3d.boss01Model) {
+    loadBoss01Model();
     // Fallback if 3D not loaded yet
     const t = performance.now();
     ctx.save();
