@@ -278,7 +278,7 @@
    * lentelė privalo rodyti TUOS prizus ir TĄ reitingą, kurie tada ir galiojo — kitaip 09-27 S5
    * pakeitimas S4 lentelėje pradėjo rodyti 69 000 RONKE, kurių ten niekada nebuvo.
    *   metric: 'total' = asmeninių taškų suma · 'score' = geriausias vienas žaidimas
-   *   prizes: 'bless' = BLESS juostos + unitai · 'ronke' = RONKE fondas top 10 */
+   *   prizes: 'bless' = BLESS juostos + unitai · 'ronke' = RONKE fondas top 10 · 'ronka' = RONKA fondas top 10 */
   const SEASONS = [
     { id: 1, key: 'rp_',  name: 'SEASON 1', start: 0,                             end: Date.UTC(2026, 7,  2,  0, 0, 0), closed: true, metric: 'total', prizes: 'bless' },
     { id: 2, key: 'rp2_', name: 'SEASON 2', start: Date.UTC(2026, 7, 3, 16, 0, 0), end: Date.UTC(2026, 7, 10, 16, 0, 0), closed: true, metric: 'total', prizes: 'bless' },
@@ -296,7 +296,11 @@
      *     aukščiausias vieno žaidimo rezultatas, tad daug trumpų žaidimų nebekaupia vietos;
      *   • prizai = 69 000 RONKE, dalijami TIK top 10 (10 000 už pirmą, toliau mažėjant).
      * Startas BE TARPO ten, kur baigėsi S4 (Rugs. 27 08:00 UTC), trukmė 14 parų. */
-    { id: 5, key: 'rp5_', name: 'SEASON 5', start: Date.UTC(2026, 8, 27, 8, 0, 0), end: Date.UTC(2026, 9, 11, 8, 0, 0), metric: 'score', prizes: 'ronke' },
+    { id: 5, key: 'rp5_', name: 'SEASON 5', start: Date.UTC(2026, 8, 27, 8, 0, 0), end: Date.UTC(2026, 9, 11, 8, 0, 0), closed: true, metric: 'score', prizes: 'ronke' },
+    /* 📅 10-11 (user): SEZONAS 6 — tos pačios taisyklės kaip S5 (reitingas = GERIAUSIAS VIENAS
+     * ŽAIDIMAS, prizai TIK top 10), bet fondas = 250 000 RONKA (ne RONKE). 14 parų.
+     * S5 baigėsi 10-11 08:00 UTC, S6 paleistas tą pačią dieną 15:00 UTC. */
+    { id: 6, key: 'rp6_', name: 'SEASON 6', start: Date.UTC(2026, 9, 11, 15, 0, 0), end: Date.UTC(2026, 9, 25, 15, 0, 0), metric: 'score', prizes: 'ronka' },
   ];
   // Serverio laikas (Supabase `Date`) jei žinom, kitaip vietinis fallback → veikia net be tinklo.
   function nowMs() { return hasServerTime() ? serverNow() : Date.now(); }

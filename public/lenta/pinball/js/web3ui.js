@@ -300,7 +300,7 @@
     if (list.length < 2) { els.seasons.innerHTML = ''; return; }
     els.seasons.innerHTML = list.map(function (s) {
       const tag = s.live ? ' <span class="sdot">● LIVE</span>' : ' <span class="sold">✓</span>';
-      return '<button class="rp-sbtn' + (s.id === boardSeason ? ' on' : '') + '" data-sid="' + s.id + '">' + s.name + tag + '</button>';
+      return '<button class="rp-sbtn' + (s.id === boardSeason ? ' on' : '') + '" data-sid="' + s.id + '" title="' + s.name + '">S' + s.id + tag + '</button>';
     }).join('');
   }
   function updateTabs() {
@@ -323,8 +323,11 @@
    * Abi schemos laikomos kartu, nes seni sezonai lieka peržiūrimi ir turi rodyti SAVO prizus. */
   const PRIZE_TOP = 3, PRIZE_MID = 10;
   const RONKE_PRIZES = [10000, 9000, 8000, 7500, 7000, 6500, 6000, 5500, 5000, 4500];   // Σ = 69 000
+  // S6 (`ronka`, 2026-10-11 user): 250 000 RONKA top 10, tos pačios taisyklės kaip S5.
+  const RONKA_PRIZES = [40000, 35000, 30000, 27500, 25000, 22500, 20000, 18500, 16500, 15000];   // Σ = 250 000
   function seasonPrize(rank, scheme) {
     if (scheme === 'ronke') return { ronke: RONKE_PRIZES[rank - 1] || 0 };
+    if (scheme === 'ronka') return { ronka: RONKA_PRIZES[rank - 1] || 0 };
     const u = rank === 1 ? 5 : rank === 2 ? 3 : rank === 3 ? 2 : rank <= PRIZE_MID ? 1 : 0;
     const bl = rank <= PRIZE_TOP ? 50 : rank <= PRIZE_MID ? 25 : 15;
     return { u: u, bl: bl };
@@ -332,6 +335,7 @@
   // Kiekvieno prizo trumpas paaiškinimas — hover (title) + paspaudus popup (žr. showInfo).
   const PRIZE_INFO = {
     ronke: { name: '🪙 RONKE', text: 'Season prize pool: 69,000 RONKE shared by the top 10. Ranked by your best single game — one great run beats a hundred short ones.' },
+    ronka: { name: '🪙 RONKA', text: 'Season prize pool: 250,000 RONKA shared by the top 10. Ranked by your best single game — one great run beats a hundred short ones.' },
     units: { name: '⚔ Units', text: 'NFT units used in Age of Ronke and Ronke Saga.' },
     bless: { name: '🪽 BLESS', text: 'BLESS is used in Age of Ronke: it shields a unit from death in battle, and instantly heals an injured unit in your hospital.' },
   };
@@ -342,6 +346,7 @@
   function prizeCells(rank, scheme) {
     const p = seasonPrize(rank, scheme), out = [];
     if (p.ronke) return pzTok('ronke', '🪙 ' + p.ronke.toLocaleString('en-US') + ' RONKE', 'pz-r');
+    if (p.ronka) return pzTok('ronka', '🪙 ' + p.ronka.toLocaleString('en-US') + ' RONKA', 'pz-r');
     if (p.u) out.push(pzTok('units', '⚔ ' + p.u + ' Unit' + (p.u > 1 ? 's' : ''), 'pz-u'));
     if (p.bl) out.push(pzTok('bless', '🪽 ' + p.bl + ' BLESS', 'pz-b'));
     return out.join('<span class="pz-sep"> · </span>');
@@ -377,7 +382,7 @@
     // Prizai matomi kiekvienoj eilutėj, tad atskiros legendos nereikia.
     let html = '<div class="rp-poolline">' + (byTotal
       ? 'Σ Ranked by your <b>TOTAL score</b> — every game adds up'
-      : '🏆 Ranked by your <b>BEST single game</b> · 69,000 RONKE shared by the top 10') + '</div>';
+      : '🏆 Ranked by your <b>BEST single game</b> · ' + (rules.prizes === 'ronka' ? '250,000 RONKA' : '69,000 RONKE') + ' shared by the top 10') + '</div>';
     // VISADA renderinam 20 slotų: užpildyti žaidėjais + tušti „— open —" (prizai matomi kiekvienoj vietoj).
     for (let i = 0; i < SLOTS; i++) {
       const rank = i + 1;
