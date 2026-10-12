@@ -37,6 +37,27 @@ function writeAll(items: PendingPayout[]): void {
   catch (e: any) { console.error("[PayoutQueue] write fail:", e?.message); }
 }
 
+// 🔒 10-12: prode veikia DU procesai (pm2 colyseus-server-1/-2) su TUO PAČIU failu. Kiekvienas
+//   skaityk→keisk→rašyk eina per išimtinį užrakto failą (atomiškas `wx` sukūrimas), kad du procesai
+//   neperrašytų vienas kito ir to paties įrašo nepaimtų mokėti abu. Užstrigęs (>5 s) užraktas nuimamas.
+//   strict=true (claim): užrakto negavus — NEMOKAM (grąžinam null). Kitur — vykdom vis tiek, kad įrašas nepradingtų.
+const LOCK_FILE = PAYOUTS_FILE + ".lock";
+const _sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function withLock<T>(fn: () => T, strict = false): T | null {
+  const t0 = Date.now();
+  let locked = false;
+  while (!locked) {
+    try { fs.closeSync(fs.openSync(LOCK_FILE, "wx")); locked = true; }
+    catch (e: any) {
+      if (e?.code !== "EEXIST") { if (strict) return null; return fn(); }
+      try { if (Date.now() - fs.statSync(LOCK_FILE).mtimeMs > 5000) { fs.unlinkSync(LOCK_FILE); continue; } } catch { /* kitas jau nuėmė */ }
+      if (Date.now() - t0 > 3000) { console.warn("[PayoutQueue] lock timeout"); if (strict) return null; return fn(); }
+      _sleep(5);
+    }
+  }
+  try { return fn(); } finally { try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ } }
+}
+
 // ── 🛟 DURABLUS SLUOKSNIS (Supabase) ─────────────────────────────────────────
 // Cloud'e `blocks_payouts.json` gyvena EFEMERIŠKAME instance diske → dingsta per redeploy/restart,
 // tad laukiantis prizas galėjo pradingti. Dubliuojam eilę į Supabase (f9_bases, raktas
@@ -62,17 +83,23 @@ class PayoutQueueImpl {
   add(p: { to: string; amount: number; kind: PayoutKind; roomId: string; manual?: boolean; note?: string }): PendingPayout | null {
     const to = String(p.to || "").toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(to) || !(p.amount > 0)) return null;
-    const items = readAll();
-    const dup = items.find((x) => x.roomId === p.roomId && x.to === to && x.kind === p.kind && x.status !== "paid");
-    if (dup) return dup;
-    const item: PendingPayout = {
-      id: `${p.roomId}_${p.kind}_${to.slice(2, 10)}`,
-      to, amount: p.amount, kind: p.kind, roomId: p.roomId,
-      createdAt: Date.now(), status: "pending", manual: !!p.manual,
-      ...(p.note ? { note: p.note } : {}),
-    };
-    items.push(item);
-    writeAll(items);
+    let fresh = false;
+    const item = withLock(() => {
+      const items = readAll();
+      const dup = items.find((x) => x.roomId === p.roomId && x.to === to && x.kind === p.kind && x.status !== "paid");
+      if (dup) return dup;
+      const it: PendingPayout = {
+        id: `${p.roomId}_${p.kind}_${to.slice(2, 10)}`,
+        to, amount: p.amount, kind: p.kind, roomId: p.roomId,
+        createdAt: Date.now(), status: "pending", manual: !!p.manual,
+        ...(p.note ? { note: p.note } : {}),
+      };
+      items.push(it);
+      writeAll(items);
+      fresh = true;
+      return it;
+    })!;
+    if (!fresh) return item;
     sbUpsert(item);   // 🛟 durablus dublis (išgyvena cloud redeploy)
     console.log(`[PayoutQueue] + ${p.kind} ${p.amount} RONKE → ${to} (room ${p.roomId}) — laukia operatoriaus (admin.html)`);
     return item;
@@ -85,30 +112,41 @@ class PayoutQueueImpl {
   //   pending() jo nebegrąžina ⇒ kita flush kilpa / kitas procesas tos pačios išmokos antrą kartą NEima.
   //   Grąžina false, jei įrašas jau nebe "pending" (kažkas kitas jį jau paėmė).
   claim(id: string): boolean {
-    const items = readAll();
-    const it = items.find((x) => x.id === id && x.status === "pending");
+    const it = withLock(() => {
+      const items = readAll();
+      const x = items.find((y) => y.id === id && y.status === "pending");
+      if (!x) return null;
+      x.status = "sending";
+      writeAll(items);
+      return x;
+    }, true);
     if (!it) return false;
-    it.status = "sending";
-    writeAll(items);
     sbUpsert(it);
     return true;
   }
   // Grąžina į "pending" TIK kai tikrai žinome, kad pervedimas NEišsiųstas (klaida prieš broadcast).
   release(id: string): void {
-    const items = readAll();
-    const it = items.find((x) => x.id === id && x.status === "sending");
-    if (!it) return;
-    it.status = "pending";
-    writeAll(items);
-    sbUpsert(it);
+    const it = withLock(() => {
+      const items = readAll();
+      const x = items.find((y) => y.id === id && y.status === "sending");
+      if (!x) return null;
+      x.status = "pending";
+      writeAll(items);
+      return x;
+    });
+    if (it) sbUpsert(it);
   }
 
   markPaid(id: string, tx: string): boolean {
-    const items = readAll();
-    const it = items.find((x) => x.id === id && (x.status === "pending" || x.status === "sending"));
+    const it = withLock(() => {
+      const items = readAll();
+      const x = items.find((y) => y.id === id && (y.status === "pending" || y.status === "sending"));
+      if (!x) return null;
+      x.status = "paid"; x.tx = String(tx || ""); x.paidAt = Date.now();
+      writeAll(items);
+      return x;
+    });
     if (!it) return false;
-    it.status = "paid"; it.tx = String(tx || ""); it.paidAt = Date.now();
-    writeAll(items);
     sbUpsert(it);   // 🛟 durablus dublis — pažymim „paid" ir Supabase'e (kad reconcile antrą kartą nemokėtų)
     console.log(`[PayoutQueue] ✓ PAID ${it.amount} RONKE → ${it.to} tx ${it.tx}`);
     return true;
@@ -121,9 +159,10 @@ class PayoutQueueImpl {
     try {
       const { data, error } = await c.from("f9_bases").select("ronin_address,buildings").ilike("ronin_address", "blockspayout_%");
       if (error) { console.warn("[PayoutQueue] reconcile query fail:", error.message); return 0; }
+      let restored = 0;
+      withLock(() => {
       const items = readAll();
       const byId = new Map(items.map((x) => [x.id, x]));
-      let restored = 0;
       for (const row of (data || [])) {
         const it = (row as any)?.buildings?.blocksPayout as PendingPayout | undefined;
         if (!it || !it.id) continue;
@@ -143,6 +182,7 @@ class PayoutQueueImpl {
         else if (it.status === "sending" && local.status === "pending") { local.status = "sending"; }   // kitas procesas jau paėmė
       }
       if (restored || (data || []).length) writeAll(items);
+      });
       if (restored) console.log(`[PayoutQueue] 🛟 reconcile: atstatytos ${restored} laukianči(os) išmok(os) iš Supabase`);
       return restored;
     } catch (e: any) { console.warn("[PayoutQueue] reconcile fail:", e?.message); return 0; }
