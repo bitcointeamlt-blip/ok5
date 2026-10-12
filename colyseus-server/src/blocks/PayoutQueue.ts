@@ -18,7 +18,7 @@ export interface PendingPayout {
   kind: PayoutKind;
   roomId: string;
   createdAt: number;
-  status: "pending" | "paid";
+  status: "pending" | "sending" | "paid";   // 10-12: "sending" = paimta mokėjimui (kita flush kilpa/procesas jos NEbeima)
   manual?: boolean;               // true = reikia OPERATORIAUS patikros prieš mokant (neverifikuotas) → auto-flush PRALEIDŽIA
   note?: string;                  // 🛡️ sulaikymo priežastis operatoriui (pvz. anti-cheat: pps_15.3,pieces_decrease)
   tx?: string;
@@ -81,9 +81,31 @@ class PayoutQueueImpl {
   pending(): PendingPayout[] { return readAll().filter((x) => x.status === "pending"); }
   recentPaid(n = 20): PendingPayout[] { return readAll().filter((x) => x.status === "paid").slice(-n).reverse(); }
 
-  markPaid(id: string, tx: string): boolean {
+  // 🔒 10-12 DVIGUBO MOKĖJIMO FIKSAS: prieš siunčiant įrašas pažymimas "sending" (failas + Supabase).
+  //   pending() jo nebegrąžina ⇒ kita flush kilpa / kitas procesas tos pačios išmokos antrą kartą NEima.
+  //   Grąžina false, jei įrašas jau nebe "pending" (kažkas kitas jį jau paėmė).
+  claim(id: string): boolean {
     const items = readAll();
     const it = items.find((x) => x.id === id && x.status === "pending");
+    if (!it) return false;
+    it.status = "sending";
+    writeAll(items);
+    sbUpsert(it);
+    return true;
+  }
+  // Grąžina į "pending" TIK kai tikrai žinome, kad pervedimas NEišsiųstas (klaida prieš broadcast).
+  release(id: string): void {
+    const items = readAll();
+    const it = items.find((x) => x.id === id && x.status === "sending");
+    if (!it) return;
+    it.status = "pending";
+    writeAll(items);
+    sbUpsert(it);
+  }
+
+  markPaid(id: string, tx: string): boolean {
+    const items = readAll();
+    const it = items.find((x) => x.id === id && (x.status === "pending" || x.status === "sending"));
     if (!it) return false;
     it.status = "paid"; it.tx = String(tx || ""); it.paidAt = Date.now();
     writeAll(items);
@@ -118,6 +140,7 @@ class PayoutQueueImpl {
           items.push(it); byId.set(it.id, it);
         }
         else if (it.status === "paid" && local.status !== "paid") { local.status = "paid"; local.tx = it.tx; local.paidAt = it.paidAt; }
+        else if (it.status === "sending" && local.status === "pending") { local.status = "sending"; }   // kitas procesas jau paėmė
       }
       if (restored || (data || []).length) writeAll(items);
       if (restored) console.log(`[PayoutQueue] 🛟 reconcile: atstatytos ${restored} laukianči(os) išmok(os) iš Supabase`);

@@ -141,8 +141,19 @@ export class StakeService {
 
   // 🔁 Išmoka LAUKIANČIAS eilės išmokas (kurios buvo nukeltos kai pool buvo tuščias). Kviečiama periodiškai —
   //   kai pool papildytas, senos „eilėje" išmokos išsimoka savaime, be operatoriaus. Tik AUTO režime.
+  // 🔒 10-12 FIKSAS: anksčiau kiekvienas įrašas laukdavo wait(1) (~12–16 s), 19 įrašų > 3 min intervalas
+  //   ⇒ kelios flush kilpos vienu metu mokėjo TUOS PAČIUS įrašus (60 pervedimų vietoj 19, +4 198 RONKE).
+  //   Dabar: (1) viena kilpa vienu metu, (2) įrašas paimamas ("sending") PRIEŠ siuntimą,
+  //   (3) "paid" žymima iškart po broadcast'o, (4) jei broadcast'as įvyko, bet wait krito — įrašas lieka
+  //   "sending" (NEkartojamas automatiškai; operatorius patikrina grandinėje).
+  private _flushing = false;
   async flushQueue(): Promise<number> {
     if (!this.enabled || this.manual) return 0;
+    if (this._flushing) return 0;
+    this._flushing = true;
+    try { return await this._flushQueueOnce(); } finally { this._flushing = false; }
+  }
+  private async _flushQueueOnce(): Promise<number> {
     const token = this._erc20();
     if (!token) return 0;
     const pend = PayoutQueue.pending();
@@ -151,16 +162,28 @@ export class StakeService {
     for (const p of pend) {
       if (p.manual) continue;   // ⚠️ neverifikuoti (manual patikros) — auto-flush NEmoka; tik operatorius per admin
       if (!/^0x[0-9a-fA-F]{40}$/.test(p.to) || !(p.amount > 0)) continue;
+      let amt: bigint;
       try {
-        const amt = ethers.parseUnits(String(p.amount), 18);
+        amt = ethers.parseUnits(String(p.amount), 18);
         const bal: bigint = await token.balanceOf(this._wallet!.address);
         if (bal < amt) { console.warn(`[StakeService] flush: pool ${ethers.formatUnits(bal, 18)} < ${p.amount} — palieku eilėje ${p.id}`); continue; }
+      } catch (e: any) { console.error(`[StakeService] flush balance fail ${p.id}:`, e?.message); continue; }
+      if (!PayoutQueue.claim(p.id)) continue;   // jau paimta kitos kilpos/proceso
+      let hash = "";
+      try {
         const tx = await token.transfer(p.to, amt);
-        await tx.wait(1);
-        PayoutQueue.markPaid(p.id, tx.hash);
-        console.log(`[StakeService] ✅ FLUSH queued payout ${p.amount} RONKE → ${p.to} tx ${tx.hash}`);
-        paid++;
-      } catch (e: any) { console.error(`[StakeService] flush fail ${p.id}:`, e?.message); }
+        hash = tx.hash;
+      } catch (e: any) {
+        // Į eilę grąžinam TIK kai aišku, kad tx neišėjo (nėra gaso / estimateGas krito). Kitu atveju
+        // (tinklo klaida — tx GALĖJO išeiti) paliekam "sending": geriau operatorius patikrins, nei mokėsim dukart.
+        const msg = String(e?.code || "") + " " + String(e?.shortMessage || e?.message || "");
+        if (/INSUFFICIENT_FUNDS|insufficient funds|CALL_EXCEPTION|estimateGas|UNPREDICTABLE_GAS_LIMIT/i.test(msg)) PayoutQueue.release(p.id);
+        console.error(`[StakeService] flush send fail ${p.id}:`, msg);
+        continue;
+      }
+      PayoutQueue.markPaid(p.id, hash);
+      console.log(`[StakeService] ✅ FLUSH queued payout ${p.amount} RONKE → ${p.to} tx ${hash}`);
+      paid++;
     }
     return paid;
   }
